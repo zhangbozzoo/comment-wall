@@ -6,10 +6,9 @@ import LoginModal from './components/LoginModal'
 import CreateModal from './components/CreateModal'
 import SentimentOverview from './components/SentimentOverview'
 import StickyNoteCard from './components/StickyNote'
-import { getWsUrl } from './utils'
+import { getWsUrl, API_BASE } from './utils' // 引入 API_BASE
 
 export default function App() {
-  // 1. 从 store 中完整解构需要的状态（必须包含 syncStatus 和 token）
   const {
     comments,
     showLogin,
@@ -17,7 +16,7 @@ export default function App() {
     setShowCreate,
     setUser,
     setToken,
-    token, // 确保你的 store 里有 token 状态
+    token,
     addComment,
     updateComment,
     setShowLogin,
@@ -25,18 +24,34 @@ export default function App() {
     setSyncStatus,
     setOnlineUsers,
     syncStatus,
+    setComments, // ⚠️ 新增：用于保存拉取的历史数据
   } = useStore()
 
   const wsRef = useRef<WebSocket | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleString('zh-CN'))
 
-  // 更新时间
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date().toLocaleString('zh-CN')), 1000)
     return () => clearInterval(timer)
   }, [])
 
-  // 2. WebSocket 连接逻辑
+  // ⚠️ 新增：页面加载时拉取数据库里的历史评论
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/comments`)
+        if (res.ok) {
+          const data = await res.json()
+          // 兼容直接返回数组，或者包了一层 { comments: [] }
+          setComments(data.comments || data || [])
+        }
+      } catch (e) {
+        console.error('获取历史评论失败', e)
+      }
+    }
+    fetchHistory()
+  }, [setComments])
+
   const connectWs = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
 
@@ -47,7 +62,6 @@ export default function App() {
 
     socket.onopen = () => {
       setSyncStatus('已连接')
-      // 刚连上时，如果本地有 token，立即发送 AUTH
       const storedToken = localStorage.getItem('token')
       if (storedToken) {
         socket.send(JSON.stringify({ type: 'AUTH', payload: { token: storedToken } }))
@@ -78,7 +92,7 @@ export default function App() {
 
     socket.onclose = () => {
       setSyncStatus('断开，重连中...')
-      setTimeout(() => connectWs(), 3000) // 3秒后自动重连
+      setTimeout(() => connectWs(), 3000)
     }
 
     socket.onerror = () => {
@@ -86,31 +100,25 @@ export default function App() {
     }
   }, [setWs, setSyncStatus, addComment, updateComment, setOnlineUsers])
 
-  // 3. 初始化加载与恢复登录状态
   useEffect(() => {
     connectWs()
-    
     const storedToken = localStorage.getItem('token')
     const storedUser = localStorage.getItem('user')
     if (storedToken && storedUser) {
       setToken(storedToken)
       setUser(JSON.parse(storedUser))
     }
-
     return () => {
       wsRef.current?.close()
     }
   }, [connectWs, setToken, setUser])
 
-  // 4. 监听 token 变化（非常重要）
-  // 如果你在页面打开后才登录成功，需要立刻让 WS 知道你的身份
   useEffect(() => {
     if (token && wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'AUTH', payload: { token } }))
     }
   }, [token])
 
-  // 5. 心跳保活，防止被 CloudBase 网关断开
   useEffect(() => {
     const interval = setInterval(() => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -120,7 +128,6 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
-  // 6. 智能整理布局（按情绪分列）
   const handleOrganize = () => {
     if (!wsRef.current) return
     const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
@@ -137,9 +144,8 @@ export default function App() {
       let y = 100
       list.forEach((c: any) => {
         const newC = { ...c, x, y }
-        updateComment(c.id, newC) // 本地更新
+        updateComment(c.id, newC)
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          // 广播给所有人
           wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x, y } }))
         }
         y += 160
@@ -150,10 +156,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden relative">
-      {/* 侧边栏 */}
       <Sidebar />
-
-      {/* 主画布 */}
       <div
         className="flex-1 relative"
         style={{
@@ -162,7 +165,6 @@ export default function App() {
           backgroundColor: '#f9fafb',
         }}
       >
-        {/* 顶部区域 */}
         <div className="absolute top-4 left-0 right-0 flex items-center justify-center pointer-events-none z-20">
           <div className="text-sm text-gray-600 font-medium">
             共反馈 <span className="text-gray-900 font-bold">{comments.length}</span> 条建议
@@ -174,16 +176,13 @@ export default function App() {
           <SentimentOverview />
         </div>
 
-        {/* 贴纸卡片 */}
         {comments.map((comment) => (
           <StickyNoteCard key={comment.id} comment={comment} />
         ))}
       </div>
 
-      {/* 底部工具栏 */}
       <Toolbar onCreate={() => setShowCreate(true)} onOrganize={handleOrganize} />
 
-      {/* 登录和新建弹窗 */}
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
       {showCreate && <CreateModal onClose={() => setShowCreate(false)} />}
     </div>

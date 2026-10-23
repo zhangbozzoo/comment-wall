@@ -29,12 +29,13 @@ export default function CreateModal({ onClose }: Props) {
           'Authorization': `Bearer ${token}` 
         },
         body: JSON.stringify({
-         content: content,
-         author_name: user?.username || '匿名',
-         author_avatar: user?.avatar,
-         x: (window.innerWidth / 2) - 130 + (Math.random() * 100 - 50),
-         y: (window.innerHeight / 2) - 100 + (Math.random() * 100 - 50)
-       })
+          content: content,
+          author_name: user?.username || '匿名',
+          author_avatar: user?.avatar,
+          // ⚠️ 修复：获取屏幕中心点并施加小范围偏移，确保出现时一定在可视区域内
+          x: (window.innerWidth / 2) - 130 + (Math.random() * 100 - 50),
+          y: (window.innerHeight / 2) - 100 + (Math.random() * 100 - 50)
+        })
       })
 
       if (!res.ok) {

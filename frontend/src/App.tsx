@@ -10,21 +10,9 @@ import { getWsUrl, API_BASE } from './utils'
 
 export default function App() {
   const {
-    comments,
-    showLogin,
-    showCreate,
-    setShowCreate,
-    setUser,
-    setToken,
-    token,
-    addComment,
-    updateComment,
-    setShowLogin,
-    setWs,
-    setSyncStatus,
-    setOnlineUsers,
-    syncStatus,
-    setComments,
+    comments, showLogin, showCreate, setShowCreate, setUser, setToken, token,
+    addComment, updateComment, setShowLogin, setWs, setSyncStatus, setOnlineUsers,
+    syncStatus, setComments,
   } = useStore()
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -35,7 +23,6 @@ export default function App() {
     return () => clearInterval(timer)
   }, [])
 
-  // 1. 初始化拉取历史数据
   useEffect(() => {
     const fetchHistory = async () => {
       try {
@@ -51,7 +38,6 @@ export default function App() {
     fetchHistory()
   }, [setComments])
 
-  // 2. WebSocket 连接与心跳
   const connectWs = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
 
@@ -71,20 +57,10 @@ export default function App() {
     socket.onmessage = (event) => {
       const msg = JSON.parse(event.data)
       switch (msg.type) {
-        case 'NEW_COMMENT':
-          addComment(msg.payload)
-          break
-        case 'COMMENT_MOVED':
-          updateComment(msg.payload.id, { x: msg.payload.x, y: msg.payload.y })
-          break
-        case 'COMMENT_LIKED':
-          updateComment(msg.payload.id, { likes: msg.payload.likes, liked_by_me: msg.payload.liked_by_me })
-          break
-        case 'presence:update':
-          setOnlineUsers(msg.payload.users || [])
-          break
-        case 'PONG':
-          break
+        case 'NEW_COMMENT': addComment(msg.payload); break
+        case 'COMMENT_MOVED': updateComment(msg.payload.id, { x: msg.payload.x, y: msg.payload.y }); break
+        case 'COMMENT_LIKED': updateComment(msg.payload.id, { likes: msg.payload.likes, liked_by_me: msg.payload.liked_by_me }); break
+        case 'presence:update': setOnlineUsers(msg.payload.users || []); break
       }
     }
 
@@ -122,9 +98,8 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
-  // 3. 智能整理布局（按情绪分列），并加上安全边界
   const handleOrganize = () => {
-    if (!wsRef.current) return
+    // ⚠️ 去掉了 if (!wsRef.current) return，即使没连上也能本地整理
     const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
     
     comments.forEach((c: any) => {
@@ -133,22 +108,22 @@ export default function App() {
       bySentiment[s].push(c)
     })
 
-    let x = 50
+    let startX = 80
     ;['positive', 'neutral', 'negative'].forEach((sent) => {
       const list = bySentiment[sent] || []
-      let y = 50
+      let startY = 80
       list.forEach((c: any) => {
-        // 限制最大 x 不超过屏幕宽度，防止溢出
-        const safeX = Math.min(x, window.innerWidth - 350)
-        const newC = { ...c, x: safeX, y }
-        updateComment(c.id, newC)
+        const newX = startX
+        const newY = startY
+        updateComment(c.id, { x: newX, y: newY })
         
+        // 如果连着 WS，就广播给别人
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x: safeX, y } }))
+          wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x: newX, y: newY } }))
         }
-        y += 180 // 增加行距，防止卡片重叠
+        startY += 180 // 每张卡片向下的间距
       })
-      x += 300
+      startX += 300 // 每列的横向间距
     })
   }
 
@@ -156,7 +131,6 @@ export default function App() {
     <div className="flex h-screen w-screen overflow-hidden relative">
       <Sidebar />
       
-      {/* ⚠️ 关键修复：加上 overflow-hidden，彻底防止卡片飞出屏幕撑破页面 */}
       <div
         className="flex-1 relative overflow-hidden"
         style={{

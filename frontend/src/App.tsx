@@ -85,7 +85,6 @@ export default function App() {
       setUser(JSON.parse(storedUser))
     }
     
-    // ⚠️ 核心修复：组件卸载时彻底断开，并取消重连回调
     return () => {
       if (wsRef.current) {
         wsRef.current.onclose = null;
@@ -109,8 +108,10 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
+  // ⚠️ 核心修复：布局切换只在本地视图生效，不保存到数据库
   const handleToggleLayout = () => {
     if (isOrganized) {
+      // -- 错落有致的打乱 --
       const cols = 3 
       const colWidth = 320 
       const startX = 80 
@@ -129,12 +130,11 @@ export default function App() {
         const newX = Math.max(20, baseX + offsetX)
         const newY = Math.max(20, baseY + offsetY)
 
+        // ⚠️ 只更新 Zustand 内存数据，不调用 ws.send
         updateComment(c.id, { x: newX, y: newY })
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x: newX, y: newY } }))
-        }
       })
     } else {
+      // -- 智能整理 --
       const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
       comments.forEach((c: any) => {
         const s = c.sentiment || 'neutral'
@@ -149,10 +149,10 @@ export default function App() {
         list.forEach((c: any) => {
           const newX = startX
           const newY = startY
+          
+          // ⚠️ 只更新 Zustand 内存数据，不调用 ws.send
           updateComment(c.id, { x: newX, y: newY })
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x: newX, y: newY } }))
-          }
+          
           startY += 180
         })
         startX += 300 

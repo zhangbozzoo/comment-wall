@@ -84,7 +84,14 @@ export default function App() {
       setToken(storedToken)
       setUser(JSON.parse(storedUser))
     }
-    return () => wsRef.current?.close()
+    
+    // ⚠️ 核心修复：组件卸载时彻底断开，并取消重连回调
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+      }
+    }
   }, [connectWs, setToken, setUser])
 
   useEffect(() => {
@@ -104,7 +111,6 @@ export default function App() {
 
   const handleToggleLayout = () => {
     if (isOrganized) {
-      // -- 错落有致的打乱算法 --
       const cols = 3 
       const colWidth = 320 
       const startX = 80 
@@ -129,7 +135,6 @@ export default function App() {
         }
       })
     } else {
-      // -- 智能整理 --
       const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
       comments.forEach((c: any) => {
         const s = c.sentiment || 'neutral'

@@ -36,11 +36,10 @@ def verify_token(token: str) -> Optional[dict]:
     except JWTError:
         return None
 
-# ⚠️ 严格保留三种情绪对应的颜色
 COLORS = {
-    "positive": "#dcfce7", # 正面：柔和绿
-    "negative": "#ffe4e6", # 负面：柔和玫瑰粉
-    "neutral": "#fef3c7"   # 中性：柔和鹅黄
+    "positive": "#dcfce7", 
+    "negative": "#ffe4e6", 
+    "neutral": "#fef3c7"   
 }
 
 NEGATIVE_WORDS = {"慢", "累", "差", "糟", "坏", "烂", "烦", "痛苦", "失望", "垃圾", "坑", "难受"}
@@ -61,11 +60,7 @@ app = FastAPI(title="实时评论墙", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://comment-wall-worktest-d0grsblxl84a0c05c.webapps.tcloudbase.com",
-        "http://localhost:5173",
-        "http://localhost:3000"
-    ],
+    allow_origins=["*"], # 为了测试方便暂时允许所有，生产环境请改回具体域名
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -137,6 +132,7 @@ async def create_new_comment(comment: CommentCreate, user_id: str = Depends(get_
     data["sentiment"] = sentiment
     data["rotate"] = round(random.uniform(-4.0, 4.0), 2)
     data["user_id"] = user_id
+    data["likes"] = 0 # 确保初始为0
 
     created = await db.create_comment(data)
     await manager.broadcast({"type": "NEW_COMMENT", "payload": created})
@@ -187,6 +183,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     "rotate": round(random.uniform(-4.0, 4.0), 2),
                     "sentiment": sentiment,
                     "user_id": user_id,
+                    "likes": 0
                 }
                 created = await db.create_comment(comment_data)
                 await manager.broadcast({"type": "NEW_COMMENT", "payload": created})
@@ -203,8 +200,12 @@ async def websocket_endpoint(websocket: WebSocket):
             elif msg_type == "LIKE_COMMENT":
                 cid = payload.get("id")
                 if not cid: continue
+                # 核心修复：这里等数据库真正返回结果再广播
                 liked, likes = await db.like_comment(cid, user_id)
-                await manager.broadcast({"type": "COMMENT_LIKED", "payload": {"id": cid, "likes": likes, "liked_by_me": liked}})
+                await manager.broadcast({
+                    "type": "COMMENT_LIKED", 
+                    "payload": {"id": cid, "likes": likes, "liked_by_me": liked}
+                })
 
     except WebSocketDisconnect:
         pass

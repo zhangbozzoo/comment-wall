@@ -72,7 +72,6 @@ export default function App() {
           updateComment(msg.payload.id, { likes: msg.payload.likes, liked_by_me: msg.payload.liked_by_me }); 
           break
         case 'COMMENT_UPDATED': 
-          // ⚠️ 核心：大模型分析完成后，将新文字、新颜色、新情感同步到所有前端
           updateComment(msg.payload.id, { 
             content: msg.payload.content, 
             color: msg.payload.color,
@@ -126,27 +125,38 @@ export default function App() {
 
   const handleToggleLayout = () => {
     if (isOrganized) {
-      const cols = 3 
-      const colWidth = 320 
-      const startX = 80 
-      const startY = 80 
+      // -- 动态错落有致的打乱 --
+      // 1. 动态计算屏幕能放下多少列（减去左侧边栏 64px 和左右留白）
+      const availableWidth = window.innerWidth - 64 - 150; 
+      const colWidth = 300; // 每列占用的宽度
+      const cols = Math.max(2, Math.floor(availableWidth / colWidth)); // 至少 2 列
       
-      comments.forEach((c, index) => {
-        const col = index % cols 
-        const row = Math.floor(index / cols) 
-        
-        const baseX = startX + col * colWidth
-        const baseY = startY + row * 200 + (col % 2 === 0 ? 0 : 60) 
-        
-        const offsetX = (Math.random() - 0.5) * 40
-        const offsetY = (Math.random() - 0.5) * 40
-        
-        const newX = Math.max(20, baseX + offsetX)
-        const newY = Math.max(20, baseY + offsetY)
+      const startX = 60;
+      const startY = 60;
 
+      // 2. 把数组洗牌，让卡片随机分布
+      const shuffled = [...comments].sort(() => Math.random() - 0.5);
+
+      shuffled.forEach((c, index) => {
+        const col = index % cols; // 当前在第几列
+        const row = Math.floor(index / cols); // 当前在第几行
+        
+        // 3. 基础坐标，垂直方向交错（形成砖块状的错落感）
+        const baseX = startX + col * colWidth;
+        const baseY = startY + row * 220 + (col % 2 === 0 ? 0 : 80); 
+        
+        // 4. 加入较大的随机偏移，打破对齐的刻板感
+        const offsetX = (Math.random() - 0.5) * 60;
+        const offsetY = (Math.random() - 0.5) * 60;
+        
+        const newX = Math.max(20, baseX + offsetX);
+        const newY = Math.max(20, baseY + offsetY);
+
+        // 只更新前端显示，不保存到数据库
         updateComment(c.id, { x: newX, y: newY })
       })
     } else {
+      // -- 智能整理（依然保持三列，按情绪归类） --
       const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
       comments.forEach((c: any) => {
         const s = c.sentiment || 'neutral'

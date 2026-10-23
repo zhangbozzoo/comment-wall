@@ -1,7 +1,3 @@
-"""
-database.py — CloudBase HTTP API (PostgREST) data access layer.
-"""
-
 import os
 import logging
 from typing import Optional, Any
@@ -52,8 +48,6 @@ def _raise_on_error(resp: httpx.Response, context: str = "") -> None:
     logger.error("HTTP %s %s: %s", resp.status_code, context, detail)
     resp.raise_for_status()
 
-
-# ── Comments CRUD ────────────────────────────────────────────────────────────
 
 async def fetch_comments(user_id: Optional[str] = None) -> list[dict]:
     client = await get_client()
@@ -110,8 +104,7 @@ async def update_comment_position(comment_id: str, x: float, y: float) -> Option
     rows = resp.json()
     return rows[0] if rows else None
 
-
-# ⚠️ 支持同时更新内容、颜色和情感
+# ⚠️ 支持更新颜色和情感
 async def update_comment_content(comment_id: str, content: str, color: str, sentiment: str) -> Optional[dict]:
     client = await get_client()
     resp = await client.patch(
@@ -135,11 +128,8 @@ async def get_comment_owner(comment_id: str) -> Optional[dict]:
     return rows[0] if rows else None
 
 
-# ── Likes ────────────────────────────────────────────────────────────────────
-
 async def like_comment(comment_id: str, user_id: str) -> tuple[bool, int]:
     client = await get_client()
-
     check_resp = await client.get(
         "/v1/rdb/rest/likes",
         params={
@@ -186,8 +176,6 @@ async def like_comment(comment_id: str, user_id: str) -> tuple[bool, int]:
         )
         return True, new_likes
 
-
-# ── Users ────────────────────────────────────────────────────────────────────
 
 async def get_user(username: str) -> Optional[dict]:
     client = await get_client()

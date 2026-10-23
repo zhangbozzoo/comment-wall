@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Rnd } from 'react-rnd'
 import { useStore, Comment } from '../store/useStore'
 
@@ -7,10 +7,21 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
   const isOwner = user?.username === comment.author_name
   
   const [localPos, setLocalPos] = useState({ x: comment.x, y: comment.y })
+  
+  // 编辑状态
+  const [isEditing, setIsEditing] = useState(false)
+  const [editContent, setEditContent] = useState(comment.content)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     setLocalPos({ x: comment.x, y: comment.y })
   }, [comment.x, comment.y])
+
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus()
+    }
+  }, [isEditing])
 
   const handleDrag = (_e: any, d: { x: number; y: number }) => setLocalPos({ x: d.x, y: d.y })
   
@@ -21,18 +32,37 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
   }
 
   const handleLike = () => {
-    if (!ws) return alert('连接未就绪')
-
-    // ⚠️ 乐观更新：点击瞬间改变 UI 状态
+    if (!ws) return
     const currentLikes = Number(comment.likes) || 0
     const newIsLiked = !comment.liked_by_me
     updateComment(comment.id, {
       likes: newIsLiked ? currentLikes + 1 : Math.max(0, currentLikes - 1),
       liked_by_me: newIsLiked
     })
-
-    // 发送给后端
     ws.send(JSON.stringify({ type: 'LIKE_COMMENT', payload: { id: comment.id } }))
+  }
+
+  const saveEdit = () => {
+    if (!isOwner || !ws || !editContent.trim()) {
+      setIsEditing(false)
+      setEditContent(comment.content)
+      return
+    }
+    if (editContent !== comment.content) {
+      ws.send(JSON.stringify({ type: 'UPDATE_COMMENT', payload: { id: comment.id, content: editContent } }))
+      updateComment(comment.id, { content: editContent }) 
+    }
+    setIsEditing(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      saveEdit()
+    } else if (e.key === 'Escape') {
+      setIsEditing(false)
+      setEditContent(comment.content)
+    }
   }
 
   const displayLikes = Number(comment.likes) || 0
@@ -45,8 +75,8 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
       onDrag={handleDrag}
       onDragStop={handleDragStop}
       enableResizing={false}
-      disableDragging={!isOwner}
-      style={{ zIndex: 10 }}
+      disableDragging={!isOwner || isEditing}
+      style={{ zIndex: isEditing ? 50 : 10 }}
     >
       <div
         className="relative p-5 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 group"
@@ -54,14 +84,41 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
           width: 260,
           minHeight: 130,
           backgroundColor: comment.color || '#fef3c7',
-          transform: `rotate(${comment.rotate || 0}deg)`,
+          transform: `rotate(${isEditing ? 0 : (comment.rotate || 0)}deg)`,
         }}
       >
         <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-6 bg-white/60 backdrop-blur-sm rotate-[-3deg] shadow-sm border border-white/40 z-0" />
         
-        <p className="relative text-sm text-gray-800 whitespace-pre-wrap mb-4 leading-relaxed font-medium z-10">
-          {comment.content}
-        </p>
+        <div 
+          className="relative text-sm text-gray-800 mb-4 z-10 cursor-text"
+          onDoubleClick={() => {
+            if (isOwner) {
+              setIsEditing(true)
+              setEditContent(comment.content)
+            }
+          }}
+        >
+          {isEditing ? (
+            <textarea
+              ref={textareaRef}
+              className="w-full bg-white/50 rounded p-1 outline-none border-2 border-black/20 focus:border-black/50 resize-none transition-colors"
+              rows={3}
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              onBlur={saveEdit}
+              onKeyDown={handleKeyDown}
+            />
+          ) : (
+            <p className="whitespace-pre-wrap leading-relaxed font-medium">
+              {comment.content}
+            </p>
+          )}
+          {isOwner && !isEditing && (
+            <div className="absolute -top-6 right-0 text-[10px] text-black/40 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+              双击编辑
+            </div>
+          )}
+        </div>
         
         <div className="flex items-center justify-between mt-auto relative z-10">
           <div className="flex items-center gap-2">

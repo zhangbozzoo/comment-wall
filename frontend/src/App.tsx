@@ -72,6 +72,7 @@ export default function App() {
           updateComment(msg.payload.id, { likes: msg.payload.likes, liked_by_me: msg.payload.liked_by_me }); 
           break
         case 'COMMENT_UPDATED': 
+          // 确保颜色、内容、情感同步更新
           updateComment(msg.payload.id, { 
             content: msg.payload.content, 
             color: msg.payload.color,
@@ -125,38 +126,31 @@ export default function App() {
 
   const handleToggleLayout = () => {
     if (isOrganized) {
-      // -- 动态错落有致的打乱 --
-      // 1. 动态计算屏幕能放下多少列（减去左侧边栏 64px 和左右留白）
-      const availableWidth = window.innerWidth - 64 - 150; 
-      const colWidth = 300; // 每列占用的宽度
-      const cols = Math.max(2, Math.floor(availableWidth / colWidth)); // 至少 2 列
-      
-      const startX = 60;
+      // -- 打乱：动态撑满屏幕，整齐错落 --
+      const availableWidth = window.innerWidth - 64; // 减去侧边栏
+      const colWidth = 300;
+      const cols = Math.max(2, Math.floor(availableWidth / colWidth)); // 动态计算列数
+
+      const shuffled = [...comments].sort(() => Math.random() - 0.5);
       const startY = 60;
 
-      // 2. 把数组洗牌，让卡片随机分布
-      const shuffled = [...comments].sort(() => Math.random() - 0.5);
-
       shuffled.forEach((c, index) => {
-        const col = index % cols; // 当前在第几列
-        const row = Math.floor(index / cols); // 当前在第几行
+        const col = index % cols;
+        const row = Math.floor(index / cols);
         
-        // 3. 基础坐标，垂直方向交错（形成砖块状的错落感）
-        const baseX = startX + col * colWidth;
-        const baseY = startY + row * 220 + (col % 2 === 0 ? 0 : 80); 
+        // 计算基础 X，让卡片在可视区域内均匀分布
+        const baseX = 40 + col * ((availableWidth - 80) / cols);
+        // 偶数列向下微调，形成错落感
+        const baseY = startY + row * 200 + (col % 2 === 0 ? 0 : 60);
         
-        // 4. 加入较大的随机偏移，打破对齐的刻板感
-        const offsetX = (Math.random() - 0.5) * 60;
-        const offsetY = (Math.random() - 0.5) * 60;
-        
-        const newX = Math.max(20, baseX + offsetX);
-        const newY = Math.max(20, baseY + offsetY);
+        // 加入极小范围的随机偏移（±15px），避免死板又不显杂乱
+        const newX = Math.max(20, baseX + (Math.random() - 0.5) * 30);
+        const newY = Math.max(20, baseY + (Math.random() - 0.5) * 30);
 
-        // 只更新前端显示，不保存到数据库
-        updateComment(c.id, { x: newX, y: newY })
-      })
+        updateComment(c.id, { x: newX, y: newY });
+      });
     } else {
-      // -- 智能整理（依然保持三列，按情绪归类） --
+      // -- 智能整理：恢复三列 --
       const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
       comments.forEach((c: any) => {
         const s = c.sentiment || 'neutral'
@@ -169,11 +163,7 @@ export default function App() {
         const list = bySentiment[sent] || []
         let startY = 100
         list.forEach((c: any) => {
-          const newX = startX
-          const newY = startY
-          
-          updateComment(c.id, { x: newX, y: newY })
-          
+          updateComment(c.id, { x: startX, y: startY })
           startY += 180
         })
         startX += 300 

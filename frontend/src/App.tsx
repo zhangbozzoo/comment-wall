@@ -65,7 +65,11 @@ export default function App() {
         case 'NEW_COMMENT': addComment(msg.payload); break
         case 'COMMENT_MOVED': updateComment(msg.payload.id, { x: msg.payload.x, y: msg.payload.y }); break
         case 'COMMENT_LIKED': updateComment(msg.payload.id, { likes: msg.payload.likes, liked_by_me: msg.payload.liked_by_me }); break
-        case 'COMMENT_UPDATED': updateComment(msg.payload.id, { content: msg.payload.content }); break // ⚠️ 新增
+        case 'COMMENT_UPDATED': updateComment(msg.payload.id, { 
+          content: msg.payload.content, 
+          color: msg.payload.color,
+          sentiment: msg.payload.sentiment
+        }); break // ⚠️ 同步颜色更新
         case 'presence:update': setOnlineUsers(msg.payload.users || []); break
       }
     }
@@ -129,7 +133,6 @@ export default function App() {
         const newX = Math.max(20, baseX + offsetX)
         const newY = Math.max(20, baseY + offsetY)
 
-        // ⚠️ 只更新 Zustand 内存数据，不调用 ws.send
         updateComment(c.id, { x: newX, y: newY })
       })
     } else {
@@ -148,7 +151,6 @@ export default function App() {
           const newX = startX
           const newY = startY
           
-          // ⚠️ 只更新 Zustand 内存数据，不调用 ws.send
           updateComment(c.id, { x: newX, y: newY })
           
           startY += 180

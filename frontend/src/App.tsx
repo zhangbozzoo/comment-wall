@@ -17,11 +17,20 @@ export default function App() {
 
   const wsRef = useRef<WebSocket | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleString('zh-CN'))
+  // 动态计算画布高度，确保向下滚动能看到所有卡片
+  const [canvasHeight, setCanvasHeight] = useState(2000)
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date().toLocaleString('zh-CN')), 1000)
     return () => clearInterval(timer)
   }, [])
+
+  // 当评论位置更新时，动态调整底部高度，支持向下无限滚动
+  useEffect(() => {
+    if (comments.length === 0) return
+    const maxY = Math.max(...comments.map(c => c.y))
+    setCanvasHeight(Math.max(1000, maxY + 400)) // 底部预留空间
+  }, [comments])
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -98,32 +107,48 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
-  const handleOrganize = () => {
-    // ⚠️ 去掉了 if (!wsRef.current) return，即使没连上也能本地整理
-    const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
+  // ⚠️ 功能 1：打乱分布（聚拢在中心区域，允许重叠）
+  const handleShuffle = () => {
+    const centerX = window.innerWidth / 2 - 300
+    const centerY = window.innerHeight / 2 - 200
     
+    comments.forEach((c, index) => {
+      // 基于中心点小范围随机，让卡片聚拢且产生自然重叠
+      const offsetX = (Math.random() - 0.5) * 400
+      const offsetY = (Math.random() - 0.5) * 300
+      const newX = Math.max(50, centerX + offsetX)
+      const newY = Math.max(50, centerY + offsetY)
+
+      updateComment(c.id, { x: newX, y: newY })
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x: newX, y: newY } }))
+      }
+    })
+  }
+
+  // ⚠️ 功能 2：智能整理（按情绪分列，自动向下方延伸支持滚动）
+  const handleOrganize = () => {
+    const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
     comments.forEach((c: any) => {
       const s = c.sentiment || 'neutral'
       if (!bySentiment[s]) bySentiment[s] = []
       bySentiment[s].push(c)
     })
 
-    let startX = 80
+    let startX = 100
     ;['positive', 'neutral', 'negative'].forEach((sent) => {
       const list = bySentiment[sent] || []
-      let startY = 80
+      let startY = 100
       list.forEach((c: any) => {
         const newX = startX
         const newY = startY
         updateComment(c.id, { x: newX, y: newY })
-        
-        // 如果连着 WS，就广播给别人
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x: newX, y: newY } }))
         }
-        startY += 180 // 每张卡片向下的间距
+        startY += 180 // 不断向下排，配合外层的 overflow-y-auto 自动出现滚动条
       })
-      startX += 300 // 每列的横向间距
+      startX += 300 
     })
   }
 
@@ -131,31 +156,37 @@ export default function App() {
     <div className="flex h-screen w-screen overflow-hidden relative">
       <Sidebar />
       
-      <div
-        className="flex-1 relative overflow-hidden"
-        style={{
-          backgroundImage: 'radial-gradient(#d1d5db 1px, transparent 1px)',
-          backgroundSize: '20px 20px',
-          backgroundColor: '#f9fafb',
-        }}
-      >
-        <div className="absolute top-4 left-0 right-0 flex items-center justify-center pointer-events-none z-20">
-          <div className="text-sm text-gray-600 font-medium">
-            共反馈 <span className="text-gray-900 font-bold">{comments.length}</span> 条建议
-          </div>
-        </div>
+      {/* ⚠️ 核心改动：改为 overflow-y-auto 允许垂直滚动，overflow-x-hidden 防止横向滚动破坏布局 */}
+      <div className="flex-1 relative overflow-y-auto overflow-x-hidden bg-[#f9fafb]">
         
-        <div className="absolute top-4 right-6 flex items-center gap-4 text-xs text-gray-400 z-20">
-          <span>☁️ {currentTime} {syncStatus}</span>
-          <SentimentOverview />
-        </div>
+        {/* 内部巨大画布容器 */}
+        <div 
+          className="relative w-full"
+          style={{
+            height: canvasHeight,
+            backgroundImage: 'radial-gradient(#d1d5db 1px, transparent 1px)',
+            backgroundSize: '20px 20px',
+          }}
+        >
+          <div className="fixed top-4 left-0 right-0 flex items-center justify-center pointer-events-none z-20">
+            <div className="text-sm text-gray-600 font-medium bg-white/80 backdrop-blur px-4 py-1 rounded-full shadow-sm">
+              共反馈 <span className="text-gray-900 font-bold">{comments.length}</span> 条建议
+            </div>
+          </div>
+          
+          <div className="fixed top-4 right-6 flex items-center gap-4 text-xs text-gray-400 z-20 bg-white/80 backdrop-blur px-3 py-1 rounded-full shadow-sm">
+            <span>☁️ {currentTime} {syncStatus}</span>
+            <SentimentOverview />
+          </div>
 
-        {comments.map((comment) => (
-          <StickyNoteCard key={comment.id} comment={comment} />
-        ))}
+          {comments.map((comment) => (
+            <StickyNoteCard key={comment.id} comment={comment} />
+          ))}
+        </div>
       </div>
 
-      <Toolbar onCreate={() => setShowCreate(true)} onOrganize={handleOrganize} />
+      {/* 传入打乱功能 */}
+      <Toolbar onCreate={() => setShowCreate(true)} onOrganize={handleOrganize} onShuffle={handleShuffle} />
 
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
       {showCreate && <CreateModal onClose={() => setShowCreate(false)} />}

@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { useStore } from '../store/useStore'
+import { API_BASE } from '../utils'
 
 interface Props {
   onClose: () => void
@@ -7,51 +8,75 @@ interface Props {
 
 export default function CreateModal({ onClose }: Props) {
   const [content, setContent] = useState('')
-  const { ws, user } = useStore()
+  const [loading, setLoading] = useState(false)
+  const { addComment } = useStore()
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!content.trim() || !ws) return
+  const handleSubmit = async () => {
+    if (!content.trim()) return
+    setLoading(true)
 
-    ws.send(
-      JSON.stringify({
-        type: 'CREATE_COMMENT',
-        payload: {
-          content: content.trim(),
-          author_name: user?.username || '匿名用户',
-          author_avatar: user?.avatar || null,
+    try {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        alert('请先登录')
+        return
+      }
+
+      // ⚠️ 关键：在 Header 中带上 Bearer Token
+      const res = await fetch(`${API_BASE}/api/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
         },
+        body: JSON.stringify({
+          content: content,
+          author_name: useStore.getState().user?.username || '匿名',
+          author_avatar: useStore.getState().user?.avatar,
+          // 随机生成位置，让卡片散开
+          x: Math.random() * 400 + 200,
+          y: Math.random() * 300 + 100
+        })
       })
-    )
 
-    setContent('')
-    onClose()
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.detail || '发表失败')
+      }
+
+      // 成功后，通过 WebSocket 广播或刷新列表更新页面
+      // 这里不需要 addComment，因为 WebSocket 会收到 NEW_COMMENT 广播自动更新
+      onClose()
+    } catch (error: any) {
+      console.error(error)
+      alert(error.message || '网络错误')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-lg relative">
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
-        >
-          ✕
-        </button>
-        <h2 className="text-xl font-bold mb-6 text-center">发表建议</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            className="w-full h-40 px-4 py-3 border border-gray-300 rounded-md text-sm resize-none focus:outline-none focus:ring-2 focus:ring-gray-900"
-            placeholder="写下你的建议..."
-          />
-          <button
-            type="submit"
-            className="w-full py-2 bg-gray-900 text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors"
-          >
-            马上发表
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-[500px] p-6">
+        <h3 className="text-lg font-bold mb-4">发表新想法</h3>
+        <textarea
+          className="w-full h-32 p-3 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="说出你的建议..."
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+        />
+        <div className="flex justify-end gap-3 mt-4">
+          <button onClick={onClose} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg">
+            取消
           </button>
-        </form>
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="px-6 py-2 bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50"
+          >
+            {loading ? '发表中...' : '马上发表'}
+          </button>
+        </div>
       </div>
     </div>
   )

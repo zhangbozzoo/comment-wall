@@ -65,6 +65,7 @@ export default function App() {
         case 'NEW_COMMENT': addComment(msg.payload); break
         case 'COMMENT_MOVED': updateComment(msg.payload.id, { x: msg.payload.x, y: msg.payload.y }); break
         case 'COMMENT_LIKED': updateComment(msg.payload.id, { likes: msg.payload.likes, liked_by_me: msg.payload.liked_by_me }); break
+        case 'COMMENT_UPDATED': updateComment(msg.payload.id, { content: msg.payload.content }); break // ⚠️ 新增
         case 'presence:update': setOnlineUsers(msg.payload.users || []); break
       }
     }
@@ -108,10 +109,8 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
-  // ⚠️ 核心修复：布局切换只在本地视图生效，不保存到数据库
   const handleToggleLayout = () => {
     if (isOrganized) {
-      // -- 错落有致的打乱 --
       const cols = 3 
       const colWidth = 320 
       const startX = 80 
@@ -134,7 +133,6 @@ export default function App() {
         updateComment(c.id, { x: newX, y: newY })
       })
     } else {
-      // -- 智能整理 --
       const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
       comments.forEach((c: any) => {
         const s = c.sentiment || 'neutral'

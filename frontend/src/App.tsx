@@ -18,7 +18,6 @@ export default function App() {
   const wsRef = useRef<WebSocket | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleString('zh-CN'))
   const [canvasHeight, setCanvasHeight] = useState(2000)
-  // 控制当前的排版模式
   const [isOrganized, setIsOrganized] = useState(false)
 
   useEffect(() => {
@@ -29,16 +28,54 @@ export default function App() {
   useEffect(() => {
     if (comments.length === 0) return
     const maxY = Math.max(...comments.map(c => c.y))
-    setCanvasHeight(Math.max(1200, maxY + 500)) // 留够底部空间
+    setCanvasHeight(Math.max(1200, maxY + 500))
   }, [comments])
 
+  // ⚠️ 核心函数：散落算法（中心聚拢、自然错落）
+  const applyScatterLayout = (commentList: any[]) => {
+    const cols = 4; 
+    const colWidth = 280; 
+    const startX = Math.max(100, window.innerWidth / 2 - (cols * colWidth) / 2 - 32); 
+    const startY = 80; 
+
+    const shuffled = [...commentList].sort(() => Math.random() - 0.5);
+
+    return shuffled.map((c, index) => {
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      
+      const baseX = startX + col * colWidth;
+      const baseY = startY + row * 160 + (col % 2 === 0 ? 0 : 40); 
+      
+      const offsetX = (Math.random() - 0.5) * 80;
+      const offsetY = (Math.random() - 0.5) * 80;
+      
+      return {
+        ...c,
+        x: Math.max(20, baseX + offsetX),
+        y: Math.max(20, baseY + offsetY)
+      };
+    });
+  }
+
+  // ⚠️ 核心函数：计算某张卡片在特定情感列中的新坐标
+  const getOrganizedPosition = (sentiment: string, currentComments: any[], targetId: string) => {
+    const list = currentComments.filter(c => (c.sentiment || 'neutral') === sentiment && c.id !== targetId)
+    const baseX = Math.max(100, window.innerWidth / 2 - 450) + (sentiment === 'positive' ? 0 : sentiment === 'neutral' ? 300 : 600)
+    const baseY = 120
+    return { x: baseX, y: baseY + list.length * 180 }
+  }
+
+  // ⚠️ 页面加载时拉取数据，并自动应用散落排版
   useEffect(() => {
     const fetchHistory = async () => {
       try {
         const res = await fetch(`${API_BASE}/api/comments`)
         if (res.ok) {
           const data = await res.json()
-          setComments(data.comments || data || [])
+          const fetchedComments = data.comments || data || []
+          // 一拿到数据，先让它们散落，然后再塞进 store
+          setComments(applyScatterLayout(fetchedComments))
         }
       } catch (e) {
         console.error('获取历史评论失败', e)
@@ -46,20 +83,6 @@ export default function App() {
     }
     fetchHistory()
   }, [setComments])
-
-  // ⚠️ 核心辅助函数：计算某张卡片在特定情感列中的新坐标（用于动态加入整理列）
-  const getOrganizedPosition = (sentiment: string, currentComments: any[], targetId: string) => {
-    // 过滤出属于该情感的所有卡片，排除自己（因为要给自己算新位置）
-    const list = currentComments.filter(c => (c.sentiment || 'neutral') === sentiment && c.id !== targetId)
-    
-    // 设定三列的起始 X 坐标
-    const baseX = sentiment === 'positive' ? 100 : sentiment === 'neutral' ? 400 : 700
-    const baseY = 120
-    const cardHeight = 180
-
-    // 位置在现有同情绪的卡片下方顺延
-    return { x: baseX, y: baseY + list.length * cardHeight }
-  }
 
   const connectWs = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
@@ -79,7 +102,6 @@ export default function App() {
       switch (msg.type) {
         case 'NEW_COMMENT': 
           addComment(msg.payload); 
-          // ⚠️ 如果当前是整理状态，新卡片直接飞进对应的列
           if (isOrganized) {
             const newPos = getOrganizedPosition(msg.payload.sentiment || 'neutral', [...comments, msg.payload], msg.payload.id);
             updateComment(msg.payload.id, newPos);
@@ -95,16 +117,14 @@ export default function App() {
           break
           
         case 'COMMENT_UPDATED': 
-          // 1. 先更新内容和颜色
           updateComment(msg.payload.id, { 
             content: msg.payload.content, 
             color: msg.payload.color,
             sentiment: msg.payload.sentiment
           }); 
           
-          // 2. 如果当前是整理状态，且大模型返回了新情感，把卡片移动到新列！
+          // ⚠️ 如果大模型返回了新情感，且当前在整理模式，立刻移动到新列
           if (isOrganized) {
-            // 组装最新的数组用于计算
             const updatedComments = comments.map(c => 
               c.id === msg.payload.id ? { ...c, sentiment: msg.payload.sentiment } : c
             );
@@ -158,37 +178,12 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
-  // ⚠️ 核心：按钮切换逻辑
   const handleToggleLayout = () => {
     if (isOrganized) {
-      // -- 散落模式（高度还原参考图：中心聚拢、自然错落、允许重叠） --
-      const cols = 4; // 固定 4 列，不随屏幕无限变宽
-      const colWidth = 280; 
-      // 整体居中偏移
-      const startX = Math.max(100, window.innerWidth / 2 - (cols * colWidth) / 2 - 32); 
-      const startY = 80; 
-
-      const shuffled = [...comments].sort(() => Math.random() - 0.5);
-
-      shuffled.forEach((c, index) => {
-        const col = index % cols;
-        const row = Math.floor(index / cols);
-        
-        // 基础坐标
-        const baseX = startX + col * colWidth;
-        const baseY = startY + row * 160 + (col % 2 === 0 ? 0 : 40); // 奇偶列错开
-        
-        // ⚠️ 在基础坐标上施加随机漂移，制造自然的层叠感
-        const offsetX = (Math.random() - 0.5) * 80;
-        const offsetY = (Math.random() - 0.5) * 80;
-        
-        const newX = Math.max(20, baseX + offsetX);
-        const newY = Math.max(20, baseY + offsetY);
-
-        updateComment(c.id, { x: newX, y: newY });
-      });
+      // -- 打乱：直接复用散落算法 --
+      setComments(applyScatterLayout(comments));
     } else {
-      // -- 智能整理模式（严格三列） --
+      // -- 智能整理 --
       const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
       comments.forEach((c: any) => {
         const s = c.sentiment || 'neutral'
@@ -196,16 +191,22 @@ export default function App() {
         bySentiment[s].push(c)
       })
 
-      let startX = Math.max(100, window.innerWidth / 2 - 450); 
-      ;['positive', 'neutral', 'negative'].forEach((sent) => {
+      const startXBase = Math.max(100, window.innerWidth / 2 - 450); 
+      const updated = [...comments];
+
+      ;['positive', 'neutral', 'negative'].forEach((sent, colIndex) => {
         const list = bySentiment[sent] || []
         let startY = 120
         list.forEach((c: any) => {
-          updateComment(c.id, { x: startX, y: startY })
+          const target = updated.find(u => u.id === c.id);
+          if (target) {
+            target.x = startXBase + colIndex * 300;
+            target.y = startY;
+          }
           startY += 180
         })
-        startX += 300 
       })
+      setComments([...updated]);
     }
     setIsOrganized(!isOrganized)
   }

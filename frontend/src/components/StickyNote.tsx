@@ -66,7 +66,7 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
         <div className="flex items-center justify-between mt-auto relative z-10">
           <div className="flex items-center gap-2">
             <img
-              src={comment.author_avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${comment.author_name}`}
+              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${comment.author_name}`}
               className="w-7 h-7 rounded-full bg-white/50 shadow-sm"
               alt="avatar"
             />

@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { useStore } from '../store/useStore'
 import { API_BASE } from '../utils'
 
-interface Props { onClose: () => void }
+interface Props {
+  onClose: () => void
+}
 
 export default function CreateModal({ onClose }: Props) {
   const [content, setContent] = useState('')
@@ -30,8 +32,9 @@ export default function CreateModal({ onClose }: Props) {
           content: content,
           author_name: user?.username || '匿名',
           author_avatar: user?.avatar,
-          x: (window.innerWidth / 2) - 130 + (Math.random() * 100 - 50),
-          y: (window.innerHeight / 2) - 100 + (Math.random() * 100 - 50)
+          // ⚠️ 调大了随机范围，让新卡片自然散落在画布中
+          x: 100 + Math.random() * 500,
+          y: 100 + Math.random() * 300
         })
       })
 
@@ -39,8 +42,10 @@ export default function CreateModal({ onClose }: Props) {
         const errData = await res.json().catch(() => ({}))
         throw new Error(errData.detail || '发表失败')
       }
+
       onClose()
     } catch (error: any) {
+      console.error(error)
       alert(error.message || '网络错误')
     } finally {
       setLoading(false)

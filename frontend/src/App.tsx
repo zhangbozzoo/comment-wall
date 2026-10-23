@@ -18,8 +18,6 @@ export default function App() {
   const wsRef = useRef<WebSocket | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleString('zh-CN'))
   const [canvasHeight, setCanvasHeight] = useState(2000)
-  
-  // 记录当前是否为“已整理”状态
   const [isOrganized, setIsOrganized] = useState(false)
 
   useEffect(() => {
@@ -27,14 +25,12 @@ export default function App() {
     return () => clearInterval(timer)
   }, [])
 
-  // 动态撑开画布高度，确保向下滚动能看到所有卡片
   useEffect(() => {
     if (comments.length === 0) return
     const maxY = Math.max(...comments.map(c => c.y))
     setCanvasHeight(Math.max(1000, maxY + 400))
   }, [comments])
 
-  // 初始化拉取历史数据
   useEffect(() => {
     const fetchHistory = async () => {
       try {
@@ -52,7 +48,6 @@ export default function App() {
 
   const connectWs = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
-
     const wsUrl = getWsUrl()
     const socket = new WebSocket(wsUrl)
     wsRef.current = socket
@@ -61,9 +56,7 @@ export default function App() {
     socket.onopen = () => {
       setSyncStatus('已连接')
       const storedToken = localStorage.getItem('token')
-      if (storedToken) {
-        socket.send(JSON.stringify({ type: 'AUTH', payload: { token: storedToken } }))
-      }
+      if (storedToken) socket.send(JSON.stringify({ type: 'AUTH', payload: { token: storedToken } }))
     }
 
     socket.onmessage = (event) => {
@@ -80,7 +73,6 @@ export default function App() {
       setSyncStatus('断开，重连中...')
       setTimeout(() => connectWs(), 3000)
     }
-
     socket.onerror = () => setSyncStatus('连接错误')
   }, [setWs, setSyncStatus, addComment, updateComment, setOnlineUsers])
 
@@ -110,18 +102,26 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
-  // 合并切换逻辑：整理 ↔ 打乱（聚拢重叠）
   const handleToggleLayout = () => {
     if (isOrganized) {
-      // -- 当前是整理状态，执行“打乱（聚拢重叠）” --
-      const centerX = window.innerWidth / 2 - 300
-      const centerY = window.innerHeight / 2 - 200
+      // -- 错落有致的打乱算法 --
+      const cols = 3 
+      const colWidth = 320 
+      const startX = 80 
+      const startY = 80 
       
-      comments.forEach((c) => {
-        const offsetX = (Math.random() - 0.5) * 400
-        const offsetY = (Math.random() - 0.5) * 300
-        const newX = Math.max(50, centerX + offsetX)
-        const newY = Math.max(50, centerY + offsetY)
+      comments.forEach((c, index) => {
+        const col = index % cols 
+        const row = Math.floor(index / cols) 
+        
+        const baseX = startX + col * colWidth
+        const baseY = startY + row * 200 + (col % 2 === 0 ? 0 : 60) 
+        
+        const offsetX = (Math.random() - 0.5) * 40
+        const offsetY = (Math.random() - 0.5) * 40
+        
+        const newX = Math.max(20, baseX + offsetX)
+        const newY = Math.max(20, baseY + offsetY)
 
         updateComment(c.id, { x: newX, y: newY })
         if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -129,7 +129,7 @@ export default function App() {
         }
       })
     } else {
-      // -- 当前是散落状态，执行“智能整理（按情绪分列）” --
+      // -- 智能整理 --
       const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
       comments.forEach((c: any) => {
         const s = c.sentiment || 'neutral'
@@ -157,26 +157,25 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden relative">
+    <div className="flex h-screen w-screen overflow-hidden relative bg-gray-50">
       <Sidebar />
       
-      {/* 允许垂直滚动 */}
-      <div className="flex-1 relative overflow-y-auto overflow-x-hidden bg-[#f9fafb]">
+      <div className="flex-1 relative overflow-y-auto overflow-x-hidden">
         <div 
-          className="relative w-full transition-all duration-500 ease-in-out"
+          className="relative w-full transition-all duration-700 ease-in-out"
           style={{
             height: canvasHeight,
-            backgroundImage: 'radial-gradient(#d1d5db 1px, transparent 1px)',
-            backgroundSize: '20px 20px',
+            backgroundImage: 'radial-gradient(#d1d5db 1.5px, transparent 1.5px)',
+            backgroundSize: '24px 24px',
           }}
         >
-          <div className="fixed top-4 left-0 right-0 flex items-center justify-center pointer-events-none z-20">
-            <div className="text-sm text-gray-600 font-medium bg-white/80 backdrop-blur px-4 py-1 rounded-full shadow-sm">
-              共反馈 <span className="text-gray-900 font-bold">{comments.length}</span> 条建议
+          <div className="fixed top-6 left-0 right-0 flex items-center justify-center pointer-events-none z-20">
+            <div className="text-sm text-gray-500 font-medium bg-white/90 backdrop-blur px-6 py-2 rounded-full shadow-sm">
+              共反馈 <span className="text-gray-900 font-bold text-lg mx-1">{comments.length}</span> 条建议
             </div>
           </div>
           
-          <div className="fixed top-4 right-6 flex items-center gap-4 text-xs text-gray-400 z-20 bg-white/80 backdrop-blur px-3 py-1 rounded-full shadow-sm">
+          <div className="fixed top-6 right-8 flex items-center gap-4 text-xs text-gray-400 z-20 bg-white/90 backdrop-blur px-4 py-2 rounded-full shadow-sm">
             <span>☁️ {currentTime} {syncStatus}</span>
             <SentimentOverview />
           </div>

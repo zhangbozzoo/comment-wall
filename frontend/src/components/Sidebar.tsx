@@ -15,11 +15,13 @@ export default function Sidebar() {
   }
 
   const handleAvatarClick = () => {
-    if (user) {
-      setShowLogoutMenu(!showLogoutMenu)
-    } else {
-      setShowLogin(true)
-    }
+    if (user) setShowLogoutMenu(!showLogoutMenu)
+    else setShowLogin(true)
+  }
+
+  // ⚠️ 核心修复：强制用 username 动态生成独一无二的头像
+  const getAvatarUrl = (u: any) => {
+    return `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`
   }
 
   return (
@@ -28,7 +30,7 @@ export default function Sidebar() {
         {onlineUsers.map((u) => (
           <div key={u.id} className="relative flex justify-center group cursor-pointer">
             <img
-              src={u.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.username}`}
+              src={getAvatarUrl(u)}
               className="w-10 h-10 rounded-full object-cover border border-gray-100 transition-transform group-hover:scale-110"
               title={u.username}
             />
@@ -45,7 +47,7 @@ export default function Sidebar() {
           {user ? (
             <>
               <img
-                src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`}
+                src={getAvatarUrl(user)}
                 className="w-10 h-10 rounded-full object-cover border-2 border-black"
               />
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white" />

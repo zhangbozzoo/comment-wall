@@ -8,14 +8,21 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
   
   const [localPos, setLocalPos] = useState({ x: comment.x, y: comment.y })
   
-  // 编辑状态
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(comment.content)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // 监听坐标变化
   useEffect(() => {
     setLocalPos({ x: comment.x, y: comment.y })
   }, [comment.x, comment.y])
+
+  // 监听内容变化
+  useEffect(() => {
+    if (!isEditing) {
+      setEditContent(comment.content)
+    }
+  }, [comment.content, isEditing])
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -26,8 +33,8 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
   const handleDrag = (_e: any, d: { x: number; y: number }) => setLocalPos({ x: d.x, y: d.y })
   
   const handleDragStop = (_e: any, d: { x: number; y: number }) => {
-    if (!isOwner || !ws) return
-    ws.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: comment.id, x: d.x, y: d.y } }))
+    if (!isOwner) return
+    // ⚠️ 修复问题2：只更新本地内存，不调用 ws.send 广播，所以别人看不到你的拖拽
     updateComment(comment.id, { x: d.x, y: d.y })
   }
 
@@ -43,16 +50,20 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
   }
 
   const saveEdit = () => {
-    if (!isOwner || !ws || !editContent.trim()) {
+    if (!editContent.trim() || editContent === comment.content) {
       setIsEditing(false)
       setEditContent(comment.content)
       return
     }
-    if (editContent !== comment.content) {
-      ws.send(JSON.stringify({ type: 'UPDATE_COMMENT', payload: { id: comment.id, content: editContent } }))
-      updateComment(comment.id, { content: editContent }) 
-    }
+
     setIsEditing(false)
+    // 乐观更新文字，让本地先看到新文字
+    updateComment(comment.id, { content: editContent })
+
+    if (ws) {
+      // 发送到后端，后端会调用大模型，几分钟后会广播回来新颜色
+      ws.send(JSON.stringify({ type: 'UPDATE_COMMENT', payload: { id: comment.id, content: editContent } }))
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -83,16 +94,19 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
         style={{
           width: 260,
           minHeight: 130,
+          // ⚠️ 修复问题3：当 comment.color 变化时，这里会自动重新渲染
           backgroundColor: comment.color || '#fef3c7',
           transform: `rotate(${isEditing ? 0 : (comment.rotate || 0)}deg)`,
+          // 加上平滑变色动画
+          transition: 'background-color 0.6s ease, transform 0.2s ease', 
         }}
       >
         <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-6 bg-white/60 backdrop-blur-sm rotate-[-3deg] shadow-sm border border-white/40 z-0" />
         
         <div 
-          className="relative text-sm text-gray-800 mb-4 z-10 cursor-text"
+          className="relative text-sm text-gray-800 mb-4 z-10 cursor-text min-h-[40px]"
           onDoubleClick={() => {
-            if (isOwner) {
+            if (isOwner && !isEditing) {
               setIsEditing(true)
               setEditContent(comment.content)
             }

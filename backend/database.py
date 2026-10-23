@@ -110,6 +110,18 @@ async def update_comment_position(comment_id: str, x: float, y: float) -> Option
     rows = resp.json()
     return rows[0] if rows else None
 
+# ⚠️ 新增：更新内容接口
+async def update_comment_content(comment_id: str, content: str) -> Optional[dict]:
+    client = await get_client()
+    resp = await client.patch(
+        "/v1/rdb/rest/comments",
+        params={"id": f"eq.{comment_id}"},
+        json={"content": content},
+    )
+    _raise_on_error(resp, "update_comment_content")
+    rows = resp.json()
+    return rows[0] if rows else None
+
 
 async def get_comment_owner(comment_id: str) -> Optional[dict]:
     client = await get_client()
@@ -125,7 +137,6 @@ async def get_comment_owner(comment_id: str) -> Optional[dict]:
 # ── Likes ────────────────────────────────────────────────────────────────────
 
 async def like_comment(comment_id: str, user_id: str) -> tuple[bool, int]:
-    """完整的点赞/取消点赞逻辑"""
     client = await get_client()
 
     # 1. 查是否已经点过赞

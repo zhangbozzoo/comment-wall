@@ -141,6 +141,7 @@ async def create_new_comment(comment: CommentCreate, user_id: str = Depends(get_
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     user_id: Optional[str] = None
+    decoded_user = None
     try:
         await websocket.accept()
         while True:
@@ -154,6 +155,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     decoded = verify_token(token)
                     if decoded:
                         user_id = decoded["sub"]
+                        decoded_user = decoded
                         await manager.connect(websocket, user_id, {
                             "id": user_id,
                             "username": decoded.get("username"),
@@ -193,9 +195,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 x = payload.get("x")
                 y = payload.get("y")
                 if cid and x is not None and y is not None:
-                    updated = await db.update_comment_position(cid, x, y)
-                    if updated:
-                        await manager.broadcast({"type": "COMMENT_MOVED", "payload": {"id": cid, "x": x, "y": y}})
+                    # 移动的权限校验
+                    comment = await db.get_comment_owner(cid)
+                    if comment and comment.get("author_name") == decoded_user.get("username"):
+                        updated = await db.update_comment_position(cid, x, y)
+                        if updated:
+                            await manager.broadcast({"type": "COMMENT_MOVED", "payload": {"id": cid, "x": x, "y": y}})
 
             elif msg_type == "LIKE_COMMENT":
                 cid = payload.get("id")
@@ -205,6 +210,21 @@ async def websocket_endpoint(websocket: WebSocket):
                     "type": "COMMENT_LIKED", 
                     "payload": {"id": cid, "likes": likes, "liked_by_me": liked}
                 })
+                
+            elif msg_type == "UPDATE_COMMENT":
+                cid = payload.get("id")
+                new_content = payload.get("content")
+                if not cid or not new_content: continue
+                
+                # ⚠️ 编辑内容的权限校验
+                comment = await db.get_comment_owner(cid)
+                if comment and comment.get("author_name") == decoded_user.get("username"):
+                    updated = await db.update_comment_content(cid, new_content)
+                    if updated:
+                        await manager.broadcast({
+                            "type": "COMMENT_UPDATED", 
+                            "payload": {"id": cid, "content": new_content}
+                        })
 
     except WebSocketDisconnect:
         pass
@@ -212,7 +232,6 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"WS Error: {e}")
     finally:
         if user_id:
-            # ⚠️ 修复：传入 websocket 实例，确保精确清理
             await manager.disconnect(user_id, websocket)
 
 if __name__ == "__main__":

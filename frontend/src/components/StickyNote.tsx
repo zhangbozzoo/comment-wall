@@ -18,6 +18,7 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
 
   const handleLike = () => {
     if (!ws) return
+    // 发送点赞广播
     ws.send(
       JSON.stringify({
         type: 'LIKE_COMMENT',
@@ -28,15 +29,17 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
 
   return (
     <Rnd
+      // ⚠️ 修复 1：加上 bounds="parent"，限制卡片绝对不能拖出画布
+      bounds="parent"
       default={{ x: comment.x, y: comment.y, width: 260, height: 'auto' as any }}
-      position={{ x: comment.x, y: comment.y }}
+      // ⚠️ 修复 2：去掉了 position，防止拖动时与状态更新冲突产生回弹闪烁
       onDragStop={handleDragStop}
       enableResizing={false}
-      disableDragging={!isOwner}
+      disableDragging={!isOwner} // 别人的卡片拖不动
       style={{ zIndex: 10 }}
     >
       <div
-        className="relative p-4 shadow-md transition-transform duration-200"
+        className="relative p-4 shadow-md hover:shadow-lg transition-shadow"
         style={{
           width: 260,
           minHeight: 120,
@@ -45,13 +48,16 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
           borderRadius: 2,
         }}
       >
+        {/* 胶带装饰 */}
         <div
           className="absolute -top-2 left-3 w-12 h-6 bg-white/80 rotate-[-12deg] shadow-sm"
           style={{ borderRadius: 1 }}
         />
+        
         <p className="text-sm text-gray-800 whitespace-pre-wrap mb-3 leading-relaxed">
           {comment.content}
         </p>
+        
         <div className="flex items-center justify-between mt-2">
           <div className="flex items-center gap-2">
             <img
@@ -67,14 +73,17 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
               {new Date(comment.created_at).toLocaleDateString()}
             </span>
           </div>
+          
+          {/* ⚠️ 这里的点赞按钮就是你卡片上的红心，点击它会发送 WebSocket 消息 */}
           <button
             onClick={handleLike}
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-500 transition-colors"
           >
             <svg
-              className="w-4 h-4"
-              fill={comment.liked_by_me ? 'red' : 'none'}
-              stroke="currentColor"
+              className="w-4 h-4 transition-colors"
+              // 点赞后变红
+              fill={comment.liked_by_me ? '#ef4444' : 'none'}
+              stroke={comment.liked_by_me ? '#ef4444' : 'currentColor'}
               viewBox="0 0 24 24"
             >
               <path

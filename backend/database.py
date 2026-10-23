@@ -110,13 +110,14 @@ async def update_comment_position(comment_id: str, x: float, y: float) -> Option
     rows = resp.json()
     return rows[0] if rows else None
 
-# ⚠️ 新增：更新内容接口
-async def update_comment_content(comment_id: str, content: str) -> Optional[dict]:
+
+# ⚠️ 支持同时更新内容、颜色和情感
+async def update_comment_content(comment_id: str, content: str, color: str, sentiment: str) -> Optional[dict]:
     client = await get_client()
     resp = await client.patch(
         "/v1/rdb/rest/comments",
         params={"id": f"eq.{comment_id}"},
-        json={"content": content},
+        json={"content": content, "color": color, "sentiment": sentiment},
     )
     _raise_on_error(resp, "update_comment_content")
     rows = resp.json()
@@ -139,7 +140,6 @@ async def get_comment_owner(comment_id: str) -> Optional[dict]:
 async def like_comment(comment_id: str, user_id: str) -> tuple[bool, int]:
     client = await get_client()
 
-    # 1. 查是否已经点过赞
     check_resp = await client.get(
         "/v1/rdb/rest/likes",
         params={
@@ -152,14 +152,12 @@ async def like_comment(comment_id: str, user_id: str) -> tuple[bool, int]:
     existing = check_resp.json()
 
     if existing:
-        # 2a. 取消点赞，删除记录
         del_resp = await client.delete(
             "/v1/rdb/rest/likes",
             params={"comment_id": f"eq.{comment_id}", "user_id": f"eq.{user_id}"},
         )
         _raise_on_error(del_resp, "like_comment/delete")
 
-        # 2b. 减 1
         comment = await get_comment_owner(comment_id)
         current_val = comment.get("likes") if comment else 0
         new_likes = max((current_val or 1) - 1, 0)
@@ -171,14 +169,12 @@ async def like_comment(comment_id: str, user_id: str) -> tuple[bool, int]:
         )
         return False, new_likes
     else:
-        # 3a. 新增点赞，插入记录
         ins_resp = await client.post(
             "/v1/rdb/rest/likes",
             json={"comment_id": comment_id, "user_id": user_id},
         )
         _raise_on_error(ins_resp, "like_comment/insert")
 
-        # 3b. 加 1
         comment = await get_comment_owner(comment_id)
         current_val = comment.get("likes") if comment else 0
         new_likes = (current_val or 0) + 1

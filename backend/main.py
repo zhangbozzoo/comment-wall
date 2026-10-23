@@ -1,10 +1,5 @@
 """
 main.py — FastAPI application for the 实时评论墙 backend.
-
-Refactored to use CloudBase HTTP API (PostgREST) via httpx
-instead of direct asyncpg PostgreSQL connections.
-
-WebSocket listens on port **9000** per CloudBase requirements.
 """
 
 import os
@@ -85,11 +80,7 @@ async def _require_user(token: Optional[str]) -> str:
 
 
 async def _check_comment_ownership(comment_id: str, user_id: str) -> dict:
-    """
-    Verify the current user owns the comment.
-    Fetches the comment via HTTP, then checks author_name against the user.
-    Raises 403/404 on failure. Returns the comment dict on success.
-    """
+    """Verify the current user owns the comment."""
     comment = await db.get_comment_owner(comment_id)
     if comment is None:
         raise HTTPException(status_code=404, detail="Comment not found")
@@ -105,9 +96,14 @@ async def _check_comment_ownership(comment_id: str, user_id: str) -> dict:
 
 app = FastAPI(title="实时评论墙", version="2.0.0")
 
+# ⚠️ 修复 CORS 问题：明确写出允许的来源域名
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://comment-wall-worktest-d0grsblxl84a0c05c.webapps.tcloudbase.com",
+        "http://localhost:5173",
+        "http://localhost:3000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -130,14 +126,20 @@ async def on_shutdown() -> None:
 @app.post("/api/login")
 async def login(req: LoginRequest):
     user = await db.get_user(req.username)
-    if user and pwd_context.verify(req.password, user["password_hash"]):
-        token = create_access_token({"sub": user["id"], "username": user["username"]})
-        return {
-            "token": token,
-            "user": {"id": user["id"], "username": user["username"], "avatar": user.get("avatar")},
-        }
+    
+    # 1. 如果用户存在，验证密码
+    if user:
+        if pwd_context.verify(req.password, user["password_hash"]):
+            token = create_access_token({"sub": user["id"], "username": user["username"]})
+            return {
+                "token": token,
+                "user": {"id": user["id"], "username": user["username"], "avatar": user.get("avatar")},
+            }
+        else:
+            # 密码错误，返回 401，不再去触发下方的自动注册逻辑
+            raise HTTPException(status_code=401, detail="账号或密码错误")
 
-    # Auto-register on first login
+    # 2. 如果用户不存在，自动注册
     new_id = str(uuid.uuid4())
     pw_hash = pwd_context.hash(req.password)
     avatar = f"https://api.dicebear.com/7.x/avataaars/svg?seed={req.username}"
@@ -325,6 +327,4 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-
-    # CloudBase requires WebSocket on port 9000
     uvicorn.run("main:app", host="0.0.0.0", port=9000, reload=True)

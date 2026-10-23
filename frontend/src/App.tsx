@@ -9,16 +9,37 @@ import StickyNoteCard from './components/StickyNote'
 import { getWsUrl } from './utils'
 
 export default function App() {
-  const { comments, showLogin, showCreate, setShowCreate, setUser, setToken, addComment, updateComment, setShowLogin, setWs, setSyncStatus, setOnlineUsers } = useStore()
+  // 1. 从 store 中完整解构需要的状态（必须包含 syncStatus 和 token）
+  const {
+    comments,
+    showLogin,
+    showCreate,
+    setShowCreate,
+    setUser,
+    setToken,
+    token, // 确保你的 store 里有 token 状态
+    addComment,
+    updateComment,
+    setShowLogin,
+    setWs,
+    setSyncStatus,
+    setOnlineUsers,
+    syncStatus,
+  } = useStore()
+
   const wsRef = useRef<WebSocket | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleString('zh-CN'))
 
+  // 更新时间
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date().toLocaleString('zh-CN')), 1000)
     return () => clearInterval(timer)
   }, [])
 
+  // 2. WebSocket 连接逻辑
   const connectWs = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return
+
     const wsUrl = getWsUrl()
     const socket = new WebSocket(wsUrl)
     wsRef.current = socket
@@ -26,6 +47,7 @@ export default function App() {
 
     socket.onopen = () => {
       setSyncStatus('已连接')
+      // 刚连上时，如果本地有 token，立即发送 AUTH
       const storedToken = localStorage.getItem('token')
       if (storedToken) {
         socket.send(JSON.stringify({ type: 'AUTH', payload: { token: storedToken } }))
@@ -49,12 +71,14 @@ export default function App() {
           break
         case 'PONG':
           break
+        default:
+          console.log('收到未处理的 WS 消息:', msg)
       }
     }
 
     socket.onclose = () => {
-      setSyncStatus('连接断开')
-      setTimeout(connectWs, 3000)
+      setSyncStatus('断开，重连中...')
+      setTimeout(() => connectWs(), 3000) // 3秒后自动重连
     }
 
     socket.onerror = () => {
@@ -62,19 +86,31 @@ export default function App() {
     }
   }, [setWs, setSyncStatus, addComment, updateComment, setOnlineUsers])
 
+  // 3. 初始化加载与恢复登录状态
   useEffect(() => {
     connectWs()
+    
     const storedToken = localStorage.getItem('token')
     const storedUser = localStorage.getItem('user')
     if (storedToken && storedUser) {
       setToken(storedToken)
       setUser(JSON.parse(storedUser))
     }
+
     return () => {
       wsRef.current?.close()
     }
   }, [connectWs, setToken, setUser])
 
+  // 4. 监听 token 变化（非常重要）
+  // 如果你在页面打开后才登录成功，需要立刻让 WS 知道你的身份
+  useEffect(() => {
+    if (token && wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'AUTH', payload: { token } }))
+    }
+  }, [token])
+
+  // 5. 心跳保活，防止被 CloudBase 网关断开
   useEffect(() => {
     const interval = setInterval(() => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -84,24 +120,26 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
+  // 6. 智能整理布局（按情绪分列）
   const handleOrganize = () => {
     if (!wsRef.current) return
     const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
+    
     comments.forEach((c: any) => {
       const s = c.sentiment || 'neutral'
       if (!bySentiment[s]) bySentiment[s] = []
       bySentiment[s].push(c)
     })
+
     let x = 100
-    const newComments: typeof comments = []
     ;['positive', 'neutral', 'negative'].forEach((sent) => {
       const list = bySentiment[sent] || []
       let y = 100
       list.forEach((c: any) => {
         const newC = { ...c, x, y }
-        updateComment(c.id, newC)
-        newComments.push(newC)
+        updateComment(c.id, newC) // 本地更新
         if (wsRef.current?.readyState === WebSocket.OPEN) {
+          // 广播给所有人
           wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x, y } }))
         }
         y += 160
@@ -130,12 +168,13 @@ export default function App() {
             共反馈 <span className="text-gray-900 font-bold">{comments.length}</span> 条建议
           </div>
         </div>
-        <div className="absolute top-4 right-6 flex items-center gap-2 text-xs text-gray-400 z-20">
-          <span>☁️ {currentTime} {useStore.getState().syncStatus}</span>
+        
+        <div className="absolute top-4 right-6 flex items-center gap-4 text-xs text-gray-400 z-20">
+          <span>☁️ {currentTime} {syncStatus}</span>
           <SentimentOverview />
         </div>
 
-        {/* 卡片 */}
+        {/* 贴纸卡片 */}
         {comments.map((comment) => (
           <StickyNoteCard key={comment.id} comment={comment} />
         ))}
@@ -144,7 +183,7 @@ export default function App() {
       {/* 底部工具栏 */}
       <Toolbar onCreate={() => setShowCreate(true)} onOrganize={handleOrganize} />
 
-      {/* 弹窗 */}
+      {/* 登录和新建弹窗 */}
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
       {showCreate && <CreateModal onClose={() => setShowCreate(false)} />}
     </div>

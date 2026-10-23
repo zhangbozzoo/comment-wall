@@ -17,21 +17,24 @@ export default function App() {
 
   const wsRef = useRef<WebSocket | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleString('zh-CN'))
-  // 动态计算画布高度，确保向下滚动能看到所有卡片
   const [canvasHeight, setCanvasHeight] = useState(2000)
+  
+  // 记录当前是否为“已整理”状态
+  const [isOrganized, setIsOrganized] = useState(false)
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date().toLocaleString('zh-CN')), 1000)
     return () => clearInterval(timer)
   }, [])
 
-  // 当评论位置更新时，动态调整底部高度，支持向下无限滚动
+  // 动态撑开画布高度，确保向下滚动能看到所有卡片
   useEffect(() => {
     if (comments.length === 0) return
     const maxY = Math.max(...comments.map(c => c.y))
-    setCanvasHeight(Math.max(1000, maxY + 400)) // 底部预留空间
+    setCanvasHeight(Math.max(1000, maxY + 400))
   }, [comments])
 
+  // 初始化拉取历史数据
   useEffect(() => {
     const fetchHistory = async () => {
       try {
@@ -107,61 +110,60 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
-  // ⚠️ 功能 1：打乱分布（聚拢在中心区域，允许重叠）
-  const handleShuffle = () => {
-    const centerX = window.innerWidth / 2 - 300
-    const centerY = window.innerHeight / 2 - 200
-    
-    comments.forEach((c, index) => {
-      // 基于中心点小范围随机，让卡片聚拢且产生自然重叠
-      const offsetX = (Math.random() - 0.5) * 400
-      const offsetY = (Math.random() - 0.5) * 300
-      const newX = Math.max(50, centerX + offsetX)
-      const newY = Math.max(50, centerY + offsetY)
+  // 合并切换逻辑：整理 ↔ 打乱（聚拢重叠）
+  const handleToggleLayout = () => {
+    if (isOrganized) {
+      // -- 当前是整理状态，执行“打乱（聚拢重叠）” --
+      const centerX = window.innerWidth / 2 - 300
+      const centerY = window.innerHeight / 2 - 200
+      
+      comments.forEach((c) => {
+        const offsetX = (Math.random() - 0.5) * 400
+        const offsetY = (Math.random() - 0.5) * 300
+        const newX = Math.max(50, centerX + offsetX)
+        const newY = Math.max(50, centerY + offsetY)
 
-      updateComment(c.id, { x: newX, y: newY })
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x: newX, y: newY } }))
-      }
-    })
-  }
-
-  // ⚠️ 功能 2：智能整理（按情绪分列，自动向下方延伸支持滚动）
-  const handleOrganize = () => {
-    const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
-    comments.forEach((c: any) => {
-      const s = c.sentiment || 'neutral'
-      if (!bySentiment[s]) bySentiment[s] = []
-      bySentiment[s].push(c)
-    })
-
-    let startX = 100
-    ;['positive', 'neutral', 'negative'].forEach((sent) => {
-      const list = bySentiment[sent] || []
-      let startY = 100
-      list.forEach((c: any) => {
-        const newX = startX
-        const newY = startY
         updateComment(c.id, { x: newX, y: newY })
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x: newX, y: newY } }))
         }
-        startY += 180 // 不断向下排，配合外层的 overflow-y-auto 自动出现滚动条
       })
-      startX += 300 
-    })
+    } else {
+      // -- 当前是散落状态，执行“智能整理（按情绪分列）” --
+      const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
+      comments.forEach((c: any) => {
+        const s = c.sentiment || 'neutral'
+        if (!bySentiment[s]) bySentiment[s] = []
+        bySentiment[s].push(c)
+      })
+
+      let startX = 100
+      ;['positive', 'neutral', 'negative'].forEach((sent) => {
+        const list = bySentiment[sent] || []
+        let startY = 100
+        list.forEach((c: any) => {
+          const newX = startX
+          const newY = startY
+          updateComment(c.id, { x: newX, y: newY })
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x: newX, y: newY } }))
+          }
+          startY += 180
+        })
+        startX += 300 
+      })
+    }
+    setIsOrganized(!isOrganized)
   }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden relative">
       <Sidebar />
       
-      {/* ⚠️ 核心改动：改为 overflow-y-auto 允许垂直滚动，overflow-x-hidden 防止横向滚动破坏布局 */}
+      {/* 允许垂直滚动 */}
       <div className="flex-1 relative overflow-y-auto overflow-x-hidden bg-[#f9fafb]">
-        
-        {/* 内部巨大画布容器 */}
         <div 
-          className="relative w-full"
+          className="relative w-full transition-all duration-500 ease-in-out"
           style={{
             height: canvasHeight,
             backgroundImage: 'radial-gradient(#d1d5db 1px, transparent 1px)',
@@ -185,8 +187,11 @@ export default function App() {
         </div>
       </div>
 
-      {/* 传入打乱功能 */}
-      <Toolbar onCreate={() => setShowCreate(true)} onOrganize={handleOrganize} onShuffle={handleShuffle} />
+      <Toolbar 
+        onCreate={() => setShowCreate(true)} 
+        onToggleLayout={handleToggleLayout} 
+        isOrganized={isOrganized} 
+      />
 
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
       {showCreate && <CreateModal onClose={() => setShowCreate(false)} />}

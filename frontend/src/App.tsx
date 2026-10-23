@@ -6,7 +6,7 @@ import LoginModal from './components/LoginModal'
 import CreateModal from './components/CreateModal'
 import SentimentOverview from './components/SentimentOverview'
 import StickyNoteCard from './components/StickyNote'
-import { getWsUrl, API_BASE } from './utils' // 引入 API_BASE
+import { getWsUrl, API_BASE } from './utils'
 
 export default function App() {
   const {
@@ -24,7 +24,7 @@ export default function App() {
     setSyncStatus,
     setOnlineUsers,
     syncStatus,
-    setComments, // ⚠️ 新增：用于保存拉取的历史数据
+    setComments,
   } = useStore()
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -35,14 +35,13 @@ export default function App() {
     return () => clearInterval(timer)
   }, [])
 
-  // ⚠️ 新增：页面加载时拉取数据库里的历史评论
+  // 1. 初始化拉取历史数据
   useEffect(() => {
     const fetchHistory = async () => {
       try {
         const res = await fetch(`${API_BASE}/api/comments`)
         if (res.ok) {
           const data = await res.json()
-          // 兼容直接返回数组，或者包了一层 { comments: [] }
           setComments(data.comments || data || [])
         }
       } catch (e) {
@@ -52,6 +51,7 @@ export default function App() {
     fetchHistory()
   }, [setComments])
 
+  // 2. WebSocket 连接与心跳
   const connectWs = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
 
@@ -85,8 +85,6 @@ export default function App() {
           break
         case 'PONG':
           break
-        default:
-          console.log('收到未处理的 WS 消息:', msg)
       }
     }
 
@@ -95,9 +93,7 @@ export default function App() {
       setTimeout(() => connectWs(), 3000)
     }
 
-    socket.onerror = () => {
-      setSyncStatus('连接错误')
-    }
+    socket.onerror = () => setSyncStatus('连接错误')
   }, [setWs, setSyncStatus, addComment, updateComment, setOnlineUsers])
 
   useEffect(() => {
@@ -108,9 +104,7 @@ export default function App() {
       setToken(storedToken)
       setUser(JSON.parse(storedUser))
     }
-    return () => {
-      wsRef.current?.close()
-    }
+    return () => wsRef.current?.close()
   }, [connectWs, setToken, setUser])
 
   useEffect(() => {
@@ -128,6 +122,7 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
+  // 3. 智能整理布局（按情绪分列），并加上安全边界
   const handleOrganize = () => {
     if (!wsRef.current) return
     const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
@@ -138,17 +133,20 @@ export default function App() {
       bySentiment[s].push(c)
     })
 
-    let x = 100
+    let x = 50
     ;['positive', 'neutral', 'negative'].forEach((sent) => {
       const list = bySentiment[sent] || []
-      let y = 100
+      let y = 50
       list.forEach((c: any) => {
-        const newC = { ...c, x, y }
+        // 限制最大 x 不超过屏幕宽度，防止溢出
+        const safeX = Math.min(x, window.innerWidth - 350)
+        const newC = { ...c, x: safeX, y }
         updateComment(c.id, newC)
+        
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x, y } }))
+          wsRef.current.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: c.id, x: safeX, y } }))
         }
-        y += 160
+        y += 180 // 增加行距，防止卡片重叠
       })
       x += 300
     })
@@ -157,8 +155,10 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden relative">
       <Sidebar />
+      
+      {/* ⚠️ 关键修复：加上 overflow-hidden，彻底防止卡片飞出屏幕撑破页面 */}
       <div
-        className="flex-1 relative"
+        className="flex-1 relative overflow-hidden"
         style={{
           backgroundImage: 'radial-gradient(#d1d5db 1px, transparent 1px)',
           backgroundSize: '20px 20px',

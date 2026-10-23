@@ -60,7 +60,7 @@ app = FastAPI(title="实时评论墙", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # 为了测试方便暂时允许所有，生产环境请改回具体域名
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -132,7 +132,7 @@ async def create_new_comment(comment: CommentCreate, user_id: str = Depends(get_
     data["sentiment"] = sentiment
     data["rotate"] = round(random.uniform(-4.0, 4.0), 2)
     data["user_id"] = user_id
-    data["likes"] = 0 # 确保初始为0
+    data["likes"] = 0
 
     created = await db.create_comment(data)
     await manager.broadcast({"type": "NEW_COMMENT", "payload": created})
@@ -200,7 +200,6 @@ async def websocket_endpoint(websocket: WebSocket):
             elif msg_type == "LIKE_COMMENT":
                 cid = payload.get("id")
                 if not cid: continue
-                # 核心修复：这里等数据库真正返回结果再广播
                 liked, likes = await db.like_comment(cid, user_id)
                 await manager.broadcast({
                     "type": "COMMENT_LIKED", 
@@ -213,7 +212,8 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"WS Error: {e}")
     finally:
         if user_id:
-            await manager.disconnect(user_id)
+            # ⚠️ 修复：传入 websocket 实例，确保精确清理
+            await manager.disconnect(user_id, websocket)
 
 if __name__ == "__main__":
     import uvicorn

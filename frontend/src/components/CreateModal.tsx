@@ -29,13 +29,12 @@ export default function CreateModal({ onClose }: Props) {
           'Authorization': `Bearer ${token}` 
         },
         body: JSON.stringify({
-          content: content,
-          author_name: user?.username || '匿名',
-          author_avatar: user?.avatar,
-          // ⚠️ 限制在一个安全的范围内，确保不会飞出画布
-          x: 200 + Math.random() * 300, 
-          y: 100 + Math.random() * 200
-        })
+         content: content,
+         author_name: user?.username || '匿名',
+         author_avatar: user?.avatar,
+         x: (window.innerWidth / 2) - 130 + (Math.random() * 100 - 50),
+         y: (window.innerHeight / 2) - 100 + (Math.random() * 100 - 50)
+       })
       })
 
       if (!res.ok) {

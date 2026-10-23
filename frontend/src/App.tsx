@@ -72,7 +72,7 @@ export default function App() {
           updateComment(msg.payload.id, { likes: msg.payload.likes, liked_by_me: msg.payload.liked_by_me }); 
           break
         case 'COMMENT_UPDATED': 
-          // 同步大模型分析后的新内容、新颜色、新情感
+          // 接收大模型颜色更新
           updateComment(msg.payload.id, { 
             content: msg.payload.content, 
             color: msg.payload.color,
@@ -126,36 +126,39 @@ export default function App() {
 
   const handleToggleLayout = () => {
     if (isOrganized) {
-      // -- 打乱：动态撑满屏幕，增加随机抖动，错落有致 --
-      const availableWidth = window.innerWidth - 64; // 减去左侧边栏宽度
-      const colWidth = 300;
-      const cols = Math.max(2, Math.floor(availableWidth / colWidth)); // 动态计算能放几列
+      // -- 自然错落打乱算法（模拟图1效果） --
+      const availableWidth = window.innerWidth - 64 - 100; // 减去侧边栏和留白
+      // 估算需要的总行数，让卡片纵向铺开
+      const cols = Math.max(3, Math.floor(availableWidth / 300)); 
+      const rows = Math.ceil(comments.length / cols);
       
-      const shuffled = [...comments].sort(() => Math.random() - 0.5); // 洗牌
-      
+      const cellWidth = availableWidth / cols;
+      const cellHeight = 220; // 每行的高度区域
       const startX = 50;
-      const startY = 60;
+      const startY = 50;
+
+      const shuffled = [...comments].sort(() => Math.random() - 0.5);
 
       shuffled.forEach((c, index) => {
         const col = index % cols;
         const row = Math.floor(index / cols);
         
-        // 基础网格坐标（均匀分布）
-        const baseX = startX + col * ((availableWidth - startX * 2) / cols);
-        // 偶数列向下错位，打破平齐
-        const baseY = startY + row * 220 + (col % 2 === 0 ? 0 : 60); 
+        // 计算每个网格的中心点
+        const centerX = startX + col * cellWidth + cellWidth / 2;
+        const centerY = startY + row * cellHeight + cellHeight / 2;
         
-        // ⚠️ 核心：加大随机抖动范围（±40px），让画面充满呼吸感，不死板
-        const offsetX = (Math.random() - 0.5) * 80;
-        const offsetY = (Math.random() - 0.5) * 80;
+        // ⚠️ 在网格内部进行大幅度的随机漂移，打破规整的网格感
+        const offsetX = (Math.random() - 0.5) * (cellWidth * 0.7);
+        const offsetY = (Math.random() - 0.5) * (cellHeight * 0.7);
         
-        const newX = Math.max(20, baseX + offsetX);
-        const newY = Math.max(20, baseY + offsetY);
+        // 减去卡片自身一半的宽高，使其居中
+        const newX = Math.max(20, centerX + offsetX - 130);
+        const newY = Math.max(20, centerY + offsetY - 65);
 
         updateComment(c.id, { x: newX, y: newY });
       });
     } else {
-      // -- 智能整理：严格三列排布 --
+      // -- 智能整理 --
       const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
       comments.forEach((c: any) => {
         const s = c.sentiment || 'neutral'
@@ -168,12 +171,10 @@ export default function App() {
         const list = bySentiment[sent] || []
         let startY = 100
         list.forEach((c: any) => {
-          const newX = startX
-          const newY = startY
-          updateComment(c.id, { x: newX, y: newY })
+          updateComment(c.id, { x: startX, y: startY })
           startY += 180
         })
-        startX += 320 
+        startX += 300 
       })
     }
     setIsOrganized(!isOrganized)

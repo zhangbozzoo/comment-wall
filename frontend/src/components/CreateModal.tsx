@@ -9,8 +9,7 @@ interface Props {
 export default function CreateModal({ onClose }: Props) {
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
-  // 直接在顶层解构拿到 user 和 addComment
-  const { addComment, user } = useStore() 
+  const { user } = useStore() 
 
   const handleSubmit = async () => {
     if (!content.trim()) return
@@ -32,9 +31,10 @@ export default function CreateModal({ onClose }: Props) {
         body: JSON.stringify({
           content: content,
           author_name: user?.username || '匿名',
-          author_avatar: user?.avatar, // 这里一定会拿到当前登录用户的专属头像
-          x: Math.random() * 400 + 200,
-          y: Math.random() * 300 + 100
+          author_avatar: user?.avatar,
+          // ⚠️ 限制在一个安全的范围内，确保不会飞出画布
+          x: 200 + Math.random() * 300, 
+          y: 100 + Math.random() * 200
         })
       })
 

@@ -1,7 +1,3 @@
-"""
-main.py — FastAPI application for the 实时评论墙 backend.
-"""
-
 import os
 import random
 import uuid
@@ -20,18 +16,13 @@ import database as db
 from websocket_manager import manager
 
 load_dotenv()
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# ── JWT ──────────────────────────────────────────────────────────────────────
 
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
@@ -39,15 +30,18 @@ def create_access_token(data: dict) -> str:
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-
 def verify_token(token: str) -> Optional[dict]:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         return None
 
-
-# ── Sentiment Analysis ───────────────────────────────────────────────────────
+# ⚠️ 严格保留三种情绪对应的颜色
+COLORS = {
+    "positive": "#dcfce7", # 正面：柔和绿
+    "negative": "#ffe4e6", # 负面：柔和玫瑰粉
+    "neutral": "#fef3c7"   # 中性：柔和鹅黄
+}
 
 NEGATIVE_WORDS = {"慢", "累", "差", "糟", "坏", "烂", "烦", "痛苦", "失望", "垃圾", "坑", "难受"}
 POSITIVE_WORDS = {"赞", "好", "顺利", "棒", "优秀", "不错", "满意", "开心", "舒服", "完美", "给力", "牛"}
@@ -55,14 +49,13 @@ POSITIVE_WORDS = {"赞", "好", "顺利", "棒", "优秀", "不错", "满意", "
 def analyze_sentiment(text: str) -> tuple[str, str]:
     neg = sum(1 for w in NEGATIVE_WORDS if w in text)
     pos = sum(1 for w in POSITIVE_WORDS if w in text)
+    
     if neg > pos:
-        return "negative", "#fee2e2"
+        return "negative", COLORS["negative"]
     elif pos > neg:
-        return "positive", "#dcfce7"
-    return "neutral", "#fef3c7"
-
-
-# ── FastAPI App ──────────────────────────────────────────────────────────────
+        return "positive", COLORS["positive"]
+    else:
+        return "neutral", COLORS["neutral"]
 
 app = FastAPI(title="实时评论墙", version="2.0.0")
 
@@ -80,16 +73,13 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    logger.info("Starting server — using CloudBase HTTP API (no direct DB connection)")
+    logger.info("Starting server")
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
     await db.close_client()
 
-# ── Auth Helpers ─────────────────────────────────────────────────────────────
-
 async def get_current_user(authorization: Optional[str] = Header(None)) -> str:
-    """从 HTTP Header 中提取 Bearer Token"""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="未提供有效的 Authorization Header")
     token = authorization.split(" ")[1]
@@ -98,9 +88,6 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> str:
         raise HTTPException(status_code=401, detail="Token 无效或已过期")
     return payload.get("sub")
 
-# ── REST Routes ──────────────────────────────────────────────────────────────
-
-# 1. 真正的登录接口
 @app.post("/api/login")
 async def login(req: LoginRequest):
     user = await db.get_user(req.username)
@@ -116,7 +103,6 @@ async def login(req: LoginRequest):
     else:
         raise HTTPException(status_code=401, detail="密码错误")
 
-# 2. 新增注册接口
 @app.post("/api/register")
 async def register(req: LoginRequest):
     user = await db.get_user(req.username)
@@ -125,12 +111,9 @@ async def register(req: LoginRequest):
     
     new_id = str(uuid.uuid4())
     pw_hash = pwd_context.hash(req.password)
-    # 动态生成专属头像（根据用户名生成唯一随机头像）
     avatar = f"https://api.dicebear.com/7.x/avataaars/svg?seed={req.username}"
     
     await db.create_user(new_id, req.username, pw_hash, avatar)
-    
-    # 注册成功后直接签发 Token 登录
     token = create_access_token({"sub": new_id, "username": req.username})
     return {
         "token": token,
@@ -152,28 +135,12 @@ async def create_new_comment(comment: CommentCreate, user_id: str = Depends(get_
     data = comment.model_dump()
     data["color"] = color
     data["sentiment"] = sentiment
-    data["rotate"] = round(random.uniform(-3.0, 3.0), 4)
-    data["user_id"] = user_id  # 确保带上用户 ID
+    data["rotate"] = round(random.uniform(-4.0, 4.0), 2)
+    data["user_id"] = user_id
 
     created = await db.create_comment(data)
     await manager.broadcast({"type": "NEW_COMMENT", "payload": created})
     return created
-
-@app.put("/api/comments/{comment_id}/position")
-async def update_position(comment_id: str, x: float, y: float, user_id: str = Depends(get_current_user)):
-    # 简单校验权限（真实项目需要查库验证是否为该用户评论）
-    updated = await db.update_comment_position(comment_id, x, y)
-    if updated:
-        await manager.broadcast({"type": "COMMENT_MOVED", "payload": {"id": comment_id, "x": x, "y": y}})
-    return updated
-
-@app.post("/api/comments/{comment_id}/like")
-async def do_like(comment_id: str, user_id: str = Depends(get_current_user)):
-    liked, likes = await db.like_comment(comment_id, user_id)
-    await manager.broadcast({"type": "COMMENT_LIKED", "payload": {"id": comment_id, "likes": likes, "liked_by_me": liked}})
-    return {"liked": liked, "likes": likes}
-
-# ── WebSocket ────────────────────────────────────────────────────────────────
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -196,7 +163,6 @@ async def websocket_endpoint(websocket: WebSocket):
                             "username": decoded.get("username"),
                             "avatar": f"https://api.dicebear.com/7.x/avataaars/svg?seed={decoded.get('username', 'user')}",
                         })
-                        logger.info(f"WebSocket Authenticated: {user_id}")
                     else:
                         await websocket.send_json({"type": "AUTH_FAILED", "payload": {}})
                 continue
@@ -206,7 +172,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if user_id is None:
-                await websocket.send_json({"type": "ERROR", "payload": {"message": "Not authenticated"}})
                 continue
 
             if msg_type == "CREATE_COMMENT":
@@ -216,10 +181,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     "content": content,
                     "author_name": payload.get("author_name", "Anonymous"),
                     "author_avatar": payload.get("author_avatar"),
-                    "x": payload.get("x", random.uniform(200, 600)),
-                    "y": payload.get("y", random.uniform(150, 400)),
+                    "x": payload.get("x", 200),
+                    "y": payload.get("y", 200),
                     "color": color,
-                    "rotate": round(random.uniform(-3.0, 3.0), 4),
+                    "rotate": round(random.uniform(-4.0, 4.0), 2),
                     "sentiment": sentiment,
                     "user_id": user_id,
                 }
@@ -235,10 +200,16 @@ async def websocket_endpoint(websocket: WebSocket):
                     if updated:
                         await manager.broadcast({"type": "COMMENT_MOVED", "payload": {"id": cid, "x": x, "y": y}})
 
+            elif msg_type == "LIKE_COMMENT":
+                cid = payload.get("id")
+                if not cid: continue
+                liked, likes = await db.like_comment(cid, user_id)
+                await manager.broadcast({"type": "COMMENT_LIKED", "payload": {"id": cid, "likes": likes, "liked_by_me": liked}})
+
     except WebSocketDisconnect:
-        logger.info("WebSocket disconnected: user=%s", user_id)
+        pass
     except Exception as e:
-        logger.error("WebSocket error: %s", e, exc_info=True)
+        logger.error(f"WS Error: {e}")
     finally:
         if user_id:
             await manager.disconnect(user_id)

@@ -9,7 +9,8 @@ interface Props {
 export default function CreateModal({ onClose }: Props) {
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
-  const { addComment } = useStore()
+  // 直接在顶层解构拿到 user 和 addComment
+  const { addComment, user } = useStore() 
 
   const handleSubmit = async () => {
     if (!content.trim()) return
@@ -22,7 +23,6 @@ export default function CreateModal({ onClose }: Props) {
         return
       }
 
-      // ⚠️ 关键：在 Header 中带上 Bearer Token
       const res = await fetch(`${API_BASE}/api/comments`, {
         method: 'POST',
         headers: {
@@ -31,9 +31,8 @@ export default function CreateModal({ onClose }: Props) {
         },
         body: JSON.stringify({
           content: content,
-          author_name: useStore.getState().user?.username || '匿名',
-          author_avatar: useStore.getState().user?.avatar,
-          // 随机生成位置，让卡片散开
+          author_name: user?.username || '匿名',
+          author_avatar: user?.avatar, // 这里一定会拿到当前登录用户的专属头像
           x: Math.random() * 400 + 200,
           y: Math.random() * 300 + 100
         })
@@ -44,8 +43,6 @@ export default function CreateModal({ onClose }: Props) {
         throw new Error(errData.detail || '发表失败')
       }
 
-      // 成功后，通过 WebSocket 广播或刷新列表更新页面
-      // 这里不需要 addComment，因为 WebSocket 会收到 NEW_COMMENT 广播自动更新
       onClose()
     } catch (error: any) {
       console.error(error)

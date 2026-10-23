@@ -18,6 +18,7 @@ export default function App() {
   const wsRef = useRef<WebSocket | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleString('zh-CN'))
   const [canvasHeight, setCanvasHeight] = useState(2000)
+  // 控制当前的排版模式
   const [isOrganized, setIsOrganized] = useState(false)
 
   useEffect(() => {
@@ -28,7 +29,7 @@ export default function App() {
   useEffect(() => {
     if (comments.length === 0) return
     const maxY = Math.max(...comments.map(c => c.y))
-    setCanvasHeight(Math.max(1000, maxY + 400))
+    setCanvasHeight(Math.max(1200, maxY + 500)) // 留够底部空间
   }, [comments])
 
   useEffect(() => {
@@ -45,6 +46,20 @@ export default function App() {
     }
     fetchHistory()
   }, [setComments])
+
+  // ⚠️ 核心辅助函数：计算某张卡片在特定情感列中的新坐标（用于动态加入整理列）
+  const getOrganizedPosition = (sentiment: string, currentComments: any[], targetId: string) => {
+    // 过滤出属于该情感的所有卡片，排除自己（因为要给自己算新位置）
+    const list = currentComments.filter(c => (c.sentiment || 'neutral') === sentiment && c.id !== targetId)
+    
+    // 设定三列的起始 X 坐标
+    const baseX = sentiment === 'positive' ? 100 : sentiment === 'neutral' ? 400 : 700
+    const baseY = 120
+    const cardHeight = 180
+
+    // 位置在现有同情绪的卡片下方顺延
+    return { x: baseX, y: baseY + list.length * cardHeight }
+  }
 
   const connectWs = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
@@ -64,21 +79,40 @@ export default function App() {
       switch (msg.type) {
         case 'NEW_COMMENT': 
           addComment(msg.payload); 
+          // ⚠️ 如果当前是整理状态，新卡片直接飞进对应的列
+          if (isOrganized) {
+            const newPos = getOrganizedPosition(msg.payload.sentiment || 'neutral', [...comments, msg.payload], msg.payload.id);
+            updateComment(msg.payload.id, newPos);
+          }
           break
+          
         case 'COMMENT_MOVED': 
           updateComment(msg.payload.id, { x: msg.payload.x, y: msg.payload.y }); 
           break
+          
         case 'COMMENT_LIKED': 
           updateComment(msg.payload.id, { likes: msg.payload.likes, liked_by_me: msg.payload.liked_by_me }); 
           break
+          
         case 'COMMENT_UPDATED': 
-          // 接收大模型颜色更新
+          // 1. 先更新内容和颜色
           updateComment(msg.payload.id, { 
             content: msg.payload.content, 
             color: msg.payload.color,
             sentiment: msg.payload.sentiment
           }); 
+          
+          // 2. 如果当前是整理状态，且大模型返回了新情感，把卡片移动到新列！
+          if (isOrganized) {
+            // 组装最新的数组用于计算
+            const updatedComments = comments.map(c => 
+              c.id === msg.payload.id ? { ...c, sentiment: msg.payload.sentiment } : c
+            );
+            const newPos = getOrganizedPosition(msg.payload.sentiment || 'neutral', updatedComments, msg.payload.id);
+            updateComment(msg.payload.id, newPos);
+          }
           break
+          
         case 'presence:update': 
           setOnlineUsers(msg.payload.users || []); 
           break
@@ -90,7 +124,7 @@ export default function App() {
       setTimeout(() => connectWs(), 3000)
     }
     socket.onerror = () => setSyncStatus('连接错误')
-  }, [setWs, setSyncStatus, addComment, updateComment, setOnlineUsers])
+  }, [setWs, setSyncStatus, addComment, updateComment, setOnlineUsers, isOrganized, comments])
 
   useEffect(() => {
     connectWs()
@@ -124,18 +158,15 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
+  // ⚠️ 核心：按钮切换逻辑
   const handleToggleLayout = () => {
     if (isOrganized) {
-      // -- 自然错落打乱算法（模拟图1效果） --
-      const availableWidth = window.innerWidth - 64 - 100; // 减去侧边栏和留白
-      // 估算需要的总行数，让卡片纵向铺开
-      const cols = Math.max(3, Math.floor(availableWidth / 300)); 
-      const rows = Math.ceil(comments.length / cols);
-      
-      const cellWidth = availableWidth / cols;
-      const cellHeight = 220; // 每行的高度区域
-      const startX = 50;
-      const startY = 50;
+      // -- 散落模式（高度还原参考图：中心聚拢、自然错落、允许重叠） --
+      const cols = 4; // 固定 4 列，不随屏幕无限变宽
+      const colWidth = 280; 
+      // 整体居中偏移
+      const startX = Math.max(100, window.innerWidth / 2 - (cols * colWidth) / 2 - 32); 
+      const startY = 80; 
 
       const shuffled = [...comments].sort(() => Math.random() - 0.5);
 
@@ -143,22 +174,21 @@ export default function App() {
         const col = index % cols;
         const row = Math.floor(index / cols);
         
-        // 计算每个网格的中心点
-        const centerX = startX + col * cellWidth + cellWidth / 2;
-        const centerY = startY + row * cellHeight + cellHeight / 2;
+        // 基础坐标
+        const baseX = startX + col * colWidth;
+        const baseY = startY + row * 160 + (col % 2 === 0 ? 0 : 40); // 奇偶列错开
         
-        // ⚠️ 在网格内部进行大幅度的随机漂移，打破规整的网格感
-        const offsetX = (Math.random() - 0.5) * (cellWidth * 0.7);
-        const offsetY = (Math.random() - 0.5) * (cellHeight * 0.7);
+        // ⚠️ 在基础坐标上施加随机漂移，制造自然的层叠感
+        const offsetX = (Math.random() - 0.5) * 80;
+        const offsetY = (Math.random() - 0.5) * 80;
         
-        // 减去卡片自身一半的宽高，使其居中
-        const newX = Math.max(20, centerX + offsetX - 130);
-        const newY = Math.max(20, centerY + offsetY - 65);
+        const newX = Math.max(20, baseX + offsetX);
+        const newY = Math.max(20, baseY + offsetY);
 
         updateComment(c.id, { x: newX, y: newY });
       });
     } else {
-      // -- 智能整理 --
+      // -- 智能整理模式（严格三列） --
       const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
       comments.forEach((c: any) => {
         const s = c.sentiment || 'neutral'
@@ -166,10 +196,10 @@ export default function App() {
         bySentiment[s].push(c)
       })
 
-      let startX = 100
+      let startX = Math.max(100, window.innerWidth / 2 - 450); 
       ;['positive', 'neutral', 'negative'].forEach((sent) => {
         const list = bySentiment[sent] || []
-        let startY = 100
+        let startY = 120
         list.forEach((c: any) => {
           updateComment(c.id, { x: startX, y: startY })
           startY += 180

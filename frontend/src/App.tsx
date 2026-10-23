@@ -72,7 +72,7 @@ export default function App() {
           updateComment(msg.payload.id, { likes: msg.payload.likes, liked_by_me: msg.payload.liked_by_me }); 
           break
         case 'COMMENT_UPDATED': 
-          // 确保颜色、内容、情感同步更新
+          // 同步大模型分析后的新内容、新颜色、新情感
           updateComment(msg.payload.id, { 
             content: msg.payload.content, 
             color: msg.payload.color,
@@ -126,31 +126,36 @@ export default function App() {
 
   const handleToggleLayout = () => {
     if (isOrganized) {
-      // -- 打乱：动态撑满屏幕，整齐错落 --
-      const availableWidth = window.innerWidth - 64; // 减去侧边栏
+      // -- 打乱：动态撑满屏幕，增加随机抖动，错落有致 --
+      const availableWidth = window.innerWidth - 64; // 减去左侧边栏宽度
       const colWidth = 300;
-      const cols = Math.max(2, Math.floor(availableWidth / colWidth)); // 动态计算列数
-
-      const shuffled = [...comments].sort(() => Math.random() - 0.5);
+      const cols = Math.max(2, Math.floor(availableWidth / colWidth)); // 动态计算能放几列
+      
+      const shuffled = [...comments].sort(() => Math.random() - 0.5); // 洗牌
+      
+      const startX = 50;
       const startY = 60;
 
       shuffled.forEach((c, index) => {
         const col = index % cols;
         const row = Math.floor(index / cols);
         
-        // 计算基础 X，让卡片在可视区域内均匀分布
-        const baseX = 40 + col * ((availableWidth - 80) / cols);
-        // 偶数列向下微调，形成错落感
-        const baseY = startY + row * 200 + (col % 2 === 0 ? 0 : 60);
+        // 基础网格坐标（均匀分布）
+        const baseX = startX + col * ((availableWidth - startX * 2) / cols);
+        // 偶数列向下错位，打破平齐
+        const baseY = startY + row * 220 + (col % 2 === 0 ? 0 : 60); 
         
-        // 加入极小范围的随机偏移（±15px），避免死板又不显杂乱
-        const newX = Math.max(20, baseX + (Math.random() - 0.5) * 30);
-        const newY = Math.max(20, baseY + (Math.random() - 0.5) * 30);
+        // ⚠️ 核心：加大随机抖动范围（±40px），让画面充满呼吸感，不死板
+        const offsetX = (Math.random() - 0.5) * 80;
+        const offsetY = (Math.random() - 0.5) * 80;
+        
+        const newX = Math.max(20, baseX + offsetX);
+        const newY = Math.max(20, baseY + offsetY);
 
         updateComment(c.id, { x: newX, y: newY });
       });
     } else {
-      // -- 智能整理：恢复三列 --
+      // -- 智能整理：严格三列排布 --
       const bySentiment: Record<string, typeof comments> = { positive: [], negative: [], neutral: [] }
       comments.forEach((c: any) => {
         const s = c.sentiment || 'neutral'
@@ -163,10 +168,12 @@ export default function App() {
         const list = bySentiment[sent] || []
         let startY = 100
         list.forEach((c: any) => {
-          updateComment(c.id, { x: startX, y: startY })
+          const newX = startX
+          const newY = startY
+          updateComment(c.id, { x: newX, y: newY })
           startY += 180
         })
-        startX += 300 
+        startX += 320 
       })
     }
     setIsOrganized(!isOrganized)

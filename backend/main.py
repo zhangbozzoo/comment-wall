@@ -100,24 +100,37 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> str:
 
 # ── REST Routes ──────────────────────────────────────────────────────────────
 
+# 1. 真正的登录接口
 @app.post("/api/login")
 async def login(req: LoginRequest):
     user = await db.get_user(req.username)
-    if user:
-        if pwd_context.verify(req.password, user["password_hash"]):
-            token = create_access_token({"sub": user["id"], "username": user["username"]})
-            return {
-                "token": token,
-                "user": {"id": user["id"], "username": user["username"], "avatar": user.get("avatar")},
-            }
-        else:
-            raise HTTPException(status_code=401, detail="账号或密码错误")
+    if not user:
+        raise HTTPException(status_code=401, detail="账号不存在，请先注册")
+    
+    if pwd_context.verify(req.password, user["password_hash"]):
+        token = create_access_token({"sub": user["id"], "username": user["username"]})
+        return {
+            "token": token,
+            "user": {"id": user["id"], "username": user["username"], "avatar": user.get("avatar")},
+        }
+    else:
+        raise HTTPException(status_code=401, detail="密码错误")
 
-    # 自动注册
+# 2. 新增注册接口
+@app.post("/api/register")
+async def register(req: LoginRequest):
+    user = await db.get_user(req.username)
+    if user:
+        raise HTTPException(status_code=409, detail="该账号已被注册")
+    
     new_id = str(uuid.uuid4())
     pw_hash = pwd_context.hash(req.password)
+    # 动态生成专属头像（根据用户名生成唯一随机头像）
     avatar = f"https://api.dicebear.com/7.x/avataaars/svg?seed={req.username}"
+    
     await db.create_user(new_id, req.username, pw_hash, avatar)
+    
+    # 注册成功后直接签发 Token 登录
     token = create_access_token({"sub": new_id, "username": req.username})
     return {
         "token": token,

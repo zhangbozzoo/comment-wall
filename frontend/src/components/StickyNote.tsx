@@ -6,10 +6,9 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
   const { user, ws, updateComment } = useStore()
   const isOwner = user?.username === comment.author_name
   
-  // 使用本地状态控制位置，确保排列时能更新，拖拽时不卡顿
+  // 使用本地状态控制位置，确保整理时能平滑飞过去
   const [localPos, setLocalPos] = useState({ x: comment.x, y: comment.y })
 
-  // 当外部数据（比如智能整理）更新时，同步本地位置
   useEffect(() => {
     setLocalPos({ x: comment.x, y: comment.y })
   }, [comment.x, comment.y])
@@ -41,7 +40,7 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
 
   return (
     <Rnd
-      bounds="parent" // ⚠️ 限制拖出画布
+      bounds="parent" // ⚠️ 严格限制拖出画布
       position={localPos} // ⚠️ 受控模式，让智能整理生效
       size={{ width: 260, height: 'auto' }}
       onDrag={handleDrag}
@@ -60,10 +59,7 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
           borderRadius: 2,
         }}
       >
-        <div
-          className="absolute -top-2 left-3 w-12 h-6 bg-white/80 rotate-[-12deg] shadow-sm"
-          style={{ borderRadius: 1 }}
-        />
+        <div className="absolute -top-2 left-3 w-12 h-6 bg-white/80 rotate-[-12deg] shadow-sm" style={{ borderRadius: 1 }} />
         
         <p className="text-sm text-gray-800 whitespace-pre-wrap mb-3 leading-relaxed">
           {comment.content}
@@ -72,10 +68,7 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
         <div className="flex items-center justify-between mt-2">
           <div className="flex items-center gap-2">
             <img
-              src={
-                comment.author_avatar ||
-                `https://api.dicebear.com/7.x/avataaars/svg?seed=${comment.author_name}`
-              }
+              src={comment.author_avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${comment.author_name}`}
               className="w-6 h-6 rounded-full"
               alt="avatar"
             />
@@ -95,12 +88,7 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
               stroke={comment.liked_by_me ? '#ef4444' : 'currentColor'}
               viewBox="0 0 24 24"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-              />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
             </svg>
             {comment.likes || 0}
           </button>

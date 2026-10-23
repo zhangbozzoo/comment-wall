@@ -12,12 +12,10 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
   const [editContent, setEditContent] = useState(comment.content)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // 监听坐标变化
   useEffect(() => {
     setLocalPos({ x: comment.x, y: comment.y })
   }, [comment.x, comment.y])
 
-  // 监听内容变化
   useEffect(() => {
     if (!isEditing) {
       setEditContent(comment.content)
@@ -34,7 +32,7 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
   
   const handleDragStop = (_e: any, d: { x: number; y: number }) => {
     if (!isOwner) return
-    // ⚠️ 修复问题2：只更新本地内存，不调用 ws.send 广播，所以别人看不到你的拖拽
+    // ⚠️ 修复：拖拽只更新本地内存，不广播给别人
     updateComment(comment.id, { x: d.x, y: d.y })
   }
 
@@ -57,11 +55,12 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
     }
 
     setIsEditing(false)
-    // 乐观更新文字，让本地先看到新文字
+    
+    // ⚠️ 修复：当点击保存时，先在本地进行“保底预览”（这里可以根据简单的字符串包含稍微猜一下颜色，或者直接设为黄色等待后端）
+    // 这里为了平滑，我们乐观地更新文字，并等待后端的 COMMENTS_UPDATED 广播来更新颜色
     updateComment(comment.id, { content: editContent })
 
     if (ws) {
-      // 发送到后端，后端会调用大模型，几分钟后会广播回来新颜色
       ws.send(JSON.stringify({ type: 'UPDATE_COMMENT', payload: { id: comment.id, content: editContent } }))
     }
   }
@@ -94,11 +93,10 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
         style={{
           width: 260,
           minHeight: 130,
-          // ⚠️ 修复问题3：当 comment.color 变化时，这里会自动重新渲染
+          // ⚠️ 修复颜色更新：背景色随 comment.color 变化，并加上平滑过渡
           backgroundColor: comment.color || '#fef3c7',
           transform: `rotate(${isEditing ? 0 : (comment.rotate || 0)}deg)`,
-          // 加上平滑变色动画
-          transition: 'background-color 0.6s ease, transform 0.2s ease', 
+          transition: 'background-color 0.8s ease, transform 0.2s ease', 
         }}
       >
         <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-6 bg-white/60 backdrop-blur-sm rotate-[-3deg] shadow-sm border border-white/40 z-0" />

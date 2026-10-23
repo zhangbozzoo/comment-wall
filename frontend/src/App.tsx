@@ -62,15 +62,26 @@ export default function App() {
     socket.onmessage = (event) => {
       const msg = JSON.parse(event.data)
       switch (msg.type) {
-        case 'NEW_COMMENT': addComment(msg.payload); break
-        case 'COMMENT_MOVED': updateComment(msg.payload.id, { x: msg.payload.x, y: msg.payload.y }); break
-        case 'COMMENT_LIKED': updateComment(msg.payload.id, { likes: msg.payload.likes, liked_by_me: msg.payload.liked_by_me }); break
-        case 'COMMENT_UPDATED': updateComment(msg.payload.id, { 
-          content: msg.payload.content, 
-          color: msg.payload.color,
-          sentiment: msg.payload.sentiment
-        }); break // ⚠️ 同步颜色更新
-        case 'presence:update': setOnlineUsers(msg.payload.users || []); break
+        case 'NEW_COMMENT': 
+          addComment(msg.payload); 
+          break
+        case 'COMMENT_MOVED': 
+          updateComment(msg.payload.id, { x: msg.payload.x, y: msg.payload.y }); 
+          break
+        case 'COMMENT_LIKED': 
+          updateComment(msg.payload.id, { likes: msg.payload.likes, liked_by_me: msg.payload.liked_by_me }); 
+          break
+        case 'COMMENT_UPDATED': 
+          // ⚠️ 核心：大模型分析完成后，将新文字、新颜色、新情感同步到所有前端
+          updateComment(msg.payload.id, { 
+            content: msg.payload.content, 
+            color: msg.payload.color,
+            sentiment: msg.payload.sentiment
+          }); 
+          break
+        case 'presence:update': 
+          setOnlineUsers(msg.payload.users || []); 
+          break
       }
     }
 

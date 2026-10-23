@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from models import CommentCreate, LoginRequest
 import database as db
 from websocket_manager import manager
+from llm_sentiment import analyze_sentiment_llm, get_color # ⚠️ 引入大模型模块
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -35,26 +36,6 @@ def verify_token(token: str) -> Optional[dict]:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         return None
-
-COLORS = {
-    "positive": "#dcfce7", 
-    "negative": "#ffe4e6", 
-    "neutral": "#fef3c7"   
-}
-
-NEGATIVE_WORDS = {"慢", "累", "差", "糟", "坏", "烂", "烦", "痛苦", "失望", "垃圾", "坑", "难受"}
-POSITIVE_WORDS = {"赞", "好", "顺利", "棒", "优秀", "不错", "满意", "开心", "舒服", "完美", "给力", "牛"}
-
-def analyze_sentiment(text: str) -> tuple[str, str]:
-    neg = sum(1 for w in NEGATIVE_WORDS if w in text)
-    pos = sum(1 for w in POSITIVE_WORDS if w in text)
-    
-    if neg > pos:
-        return "negative", COLORS["negative"]
-    elif pos > neg:
-        return "positive", COLORS["positive"]
-    else:
-        return "neutral", COLORS["neutral"]
 
 app = FastAPI(title="实时评论墙", version="2.0.0")
 
@@ -126,7 +107,10 @@ async def list_comments(authorization: Optional[str] = Header(None)):
 
 @app.post("/api/comments")
 async def create_new_comment(comment: CommentCreate, user_id: str = Depends(get_current_user)):
-    sentiment, color = analyze_sentiment(comment.content)
+    # ⚠️ 调用大模型分析
+    sentiment = await analyze_sentiment_llm(comment.content)
+    color = get_color(sentiment)
+    
     data = comment.model_dump()
     data["color"] = color
     data["sentiment"] = sentiment
@@ -174,7 +158,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if msg_type == "CREATE_COMMENT":
                 content = payload.get("content", "")
-                sentiment, color = analyze_sentiment(content)
+                sentiment = await analyze_sentiment_llm(content)
+                color = get_color(sentiment)
+                
                 comment_data = {
                     "content": content,
                     "author_name": payload.get("author_name", "Anonymous"),
@@ -195,7 +181,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 x = payload.get("x")
                 y = payload.get("y")
                 if cid and x is not None and y is not None:
-                    # 移动的权限校验
                     comment = await db.get_comment_owner(cid)
                     if comment and comment.get("author_name") == decoded_user.get("username"):
                         updated = await db.update_comment_position(cid, x, y)
@@ -216,14 +201,17 @@ async def websocket_endpoint(websocket: WebSocket):
                 new_content = payload.get("content")
                 if not cid or not new_content: continue
                 
-                # ⚠️ 编辑内容的权限校验
                 comment = await db.get_comment_owner(cid)
                 if comment and comment.get("author_name") == decoded_user.get("username"):
-                    updated = await db.update_comment_content(cid, new_content)
+                    # ⚠️ 修改内容时，重新请求大模型
+                    sentiment = await analyze_sentiment_llm(new_content)
+                    color = get_color(sentiment)
+                    
+                    updated = await db.update_comment_content(cid, new_content, color, sentiment)
                     if updated:
                         await manager.broadcast({
                             "type": "COMMENT_UPDATED", 
-                            "payload": {"id": cid, "content": new_content}
+                            "payload": {"id": cid, "content": new_content, "color": color, "sentiment": sentiment}
                         })
 
     except WebSocketDisconnect:

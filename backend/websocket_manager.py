@@ -12,7 +12,6 @@ class ConnectionManager:
         self.user_presence: Dict[str, dict] = {}
 
     async def connect(self, websocket: WebSocket, user_id: str, user_data: dict):
-        await websocket.accept()
         self.active_connections[user_id] = websocket
         self.user_presence[user_id] = user_data
         await self.broadcast_presence()

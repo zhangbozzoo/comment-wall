@@ -1,9 +1,22 @@
+import { useState, useEffect } from 'react'
 import { Rnd } from 'react-rnd'
 import { useStore, Comment } from '../store/useStore'
 
 export default function StickyNoteCard({ comment }: { comment: Comment }) {
   const { user, ws, updateComment } = useStore()
   const isOwner = user?.username === comment.author_name
+  
+  // 使用本地状态控制位置，确保排列时能更新，拖拽时不卡顿
+  const [localPos, setLocalPos] = useState({ x: comment.x, y: comment.y })
+
+  // 当外部数据（比如智能整理）更新时，同步本地位置
+  useEffect(() => {
+    setLocalPos({ x: comment.x, y: comment.y })
+  }, [comment.x, comment.y])
+
+  const handleDrag = (_e: any, d: { x: number; y: number }) => {
+    setLocalPos({ x: d.x, y: d.y })
+  }
 
   const handleDragStop = (_e: any, d: { x: number; y: number }) => {
     if (!isOwner || !ws) return
@@ -18,7 +31,6 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
 
   const handleLike = () => {
     if (!ws) return
-    // 发送点赞广播
     ws.send(
       JSON.stringify({
         type: 'LIKE_COMMENT',
@@ -29,13 +41,13 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
 
   return (
     <Rnd
-      // ⚠️ 修复 1：加上 bounds="parent"，限制卡片绝对不能拖出画布
-      bounds="parent"
-      default={{ x: comment.x, y: comment.y, width: 260, height: 'auto' as any }}
-      // ⚠️ 修复 2：去掉了 position，防止拖动时与状态更新冲突产生回弹闪烁
+      bounds="parent" // ⚠️ 限制拖出画布
+      position={localPos} // ⚠️ 受控模式，让智能整理生效
+      size={{ width: 260, height: 'auto' }}
+      onDrag={handleDrag}
       onDragStop={handleDragStop}
       enableResizing={false}
-      disableDragging={!isOwner} // 别人的卡片拖不动
+      disableDragging={!isOwner}
       style={{ zIndex: 10 }}
     >
       <div
@@ -48,7 +60,6 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
           borderRadius: 2,
         }}
       >
-        {/* 胶带装饰 */}
         <div
           className="absolute -top-2 left-3 w-12 h-6 bg-white/80 rotate-[-12deg] shadow-sm"
           style={{ borderRadius: 1 }}
@@ -74,14 +85,12 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
             </span>
           </div>
           
-          {/* ⚠️ 这里的点赞按钮就是你卡片上的红心，点击它会发送 WebSocket 消息 */}
           <button
             onClick={handleLike}
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-500 transition-colors"
           >
             <svg
               className="w-4 h-4 transition-colors"
-              // 点赞后变红
               fill={comment.liked_by_me ? '#ef4444' : 'none'}
               stroke={comment.liked_by_me ? '#ef4444' : 'currentColor'}
               viewBox="0 0 24 24"

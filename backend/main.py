@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from models import CommentCreate, LoginRequest
 import database as db
 from websocket_manager import manager
-from llm_sentiment import analyze_sentiment_llm, get_color # ⚠️ 引入大模型模块
+from llm_sentiment import analyze_sentiment_llm, get_color # ⚠️ 引入大模型
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -107,7 +107,6 @@ async def list_comments(authorization: Optional[str] = Header(None)):
 
 @app.post("/api/comments")
 async def create_new_comment(comment: CommentCreate, user_id: str = Depends(get_current_user)):
-    # ⚠️ 调用大模型分析
     sentiment = await analyze_sentiment_llm(comment.content)
     color = get_color(sentiment)
     
@@ -203,12 +202,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 comment = await db.get_comment_owner(cid)
                 if comment and comment.get("author_name") == decoded_user.get("username"):
-                    # ⚠️ 修改内容时，重新请求大模型
+                    # ⚠️ 核心：更新时重新调用大模型分析情感
                     sentiment = await analyze_sentiment_llm(new_content)
                     color = get_color(sentiment)
                     
                     updated = await db.update_comment_content(cid, new_content, color, sentiment)
                     if updated:
+                        # ⚠️ 核心：把新颜色和新情感广播给所有人
                         await manager.broadcast({
                             "type": "COMMENT_UPDATED", 
                             "payload": {"id": cid, "content": new_content, "color": color, "sentiment": sentiment}

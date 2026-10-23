@@ -1,97 +1,97 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { useStore } from '../store/useStore'
 import { API_BASE } from '../utils'
 
-interface Props {
-  onClose: () => void
-}
+interface Props { onClose: () => void }
 
 export default function LoginModal({ onClose }: Props) {
+  const [isRegister, setIsRegister] = useState(false)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [remember, setRemember] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { setUser, setToken } = useStore()
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async () => {
+    if (!username || !password) return setError('请输入账号和密码')
     setError('')
     setLoading(true)
+
+    const endpoint = isRegister ? '/api/register' : '/api/login'
+
     try {
-      const res = await fetch(`${API_BASE}/api/login`, {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password })
       })
-      if (!res.ok) {
-        setError('账号密码错误')
-        setLoading(false)
-        return
-      }
+
       const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || '操作失败')
+
+      // 成功：保存状态
       localStorage.setItem('token', data.token)
       localStorage.setItem('user', JSON.stringify(data.user))
       setToken(data.token)
       setUser(data.user)
       onClose()
-    } catch {
-      setError('网络错误')
+    } catch (err: any) {
+      setError(err.message)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-sm relative">
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600"
-        >
-          ✕
-        </button>
-        <h2 className="text-xl font-bold mb-6 text-center">登录</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-[400px] p-6 relative">
+        <h3 className="text-xl font-bold mb-6 text-center">{isRegister ? '注册新账号' : '账号登录'}</h3>
+        
+        <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">账号</label>
             <input
               type="text"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="请输入用户名"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 ${error ? 'border-red-500' : 'border-gray-300'}`}
-              placeholder="请输入账号"
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">密码</label>
             <input
               type="password"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="请输入密码"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 ${error ? 'border-red-500' : 'border-gray-300'}`}
-              placeholder="请输入密码"
             />
-            {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="remember"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            <label htmlFor="remember" className="text-sm text-gray-600">自动登录</label>
-          </div>
+          {error && <div className="text-red-500 text-sm">{error}</div>}
+        </div>
+
+        <button
+          onClick={handleSubmit}
+          disabled={loading}
+          className="w-full mt-6 bg-black text-white py-2 rounded-lg hover:bg-gray-800 disabled:opacity-50"
+        >
+          {loading ? '处理中...' : (isRegister ? '注册并登录' : '登录')}
+        </button>
+
+        <div className="mt-4 text-center text-sm text-gray-500">
+          {isRegister ? '已有账号？' : '还没有账号？'}
           <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2 bg-gray-900 text-white rounded-md text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50"
+            onClick={() => { setIsRegister(!isRegister); setError('') }}
+            className="text-blue-600 ml-1 hover:underline"
           >
-            {loading ? '登录中...' : '登录'}
+            {isRegister ? '去登录' : '去注册'}
           </button>
-        </form>
+        </div>
+
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+          ✕
+        </button>
       </div>
     </div>
   )

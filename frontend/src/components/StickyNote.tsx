@@ -13,15 +13,29 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
   }, [comment.x, comment.y])
 
   const handleDrag = (_e: any, d: { x: number; y: number }) => setLocalPos({ x: d.x, y: d.y })
+  
   const handleDragStop = (_e: any, d: { x: number; y: number }) => {
     if (!isOwner || !ws) return
     ws.send(JSON.stringify({ type: 'MOVE_COMMENT', payload: { id: comment.id, x: d.x, y: d.y } }))
     updateComment(comment.id, { x: d.x, y: d.y })
   }
+
   const handleLike = () => {
-    if (!ws) return
+    if (!ws) return alert('连接未就绪')
+
+    // ⚠️ 乐观更新：点击瞬间改变 UI 状态
+    const currentLikes = Number(comment.likes) || 0
+    const newIsLiked = !comment.liked_by_me
+    updateComment(comment.id, {
+      likes: newIsLiked ? currentLikes + 1 : Math.max(0, currentLikes - 1),
+      liked_by_me: newIsLiked
+    })
+
+    // 发送给后端
     ws.send(JSON.stringify({ type: 'LIKE_COMMENT', payload: { id: comment.id } }))
   }
+
+  const displayLikes = Number(comment.likes) || 0
 
   return (
     <Rnd
@@ -43,15 +57,12 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
           transform: `rotate(${comment.rotate || 0}deg)`,
         }}
       >
-        {/* 精美胶带 */}
         <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-6 bg-white/60 backdrop-blur-sm rotate-[-3deg] shadow-sm border border-white/40 z-0" />
         
-        {/* 内容 */}
         <p className="relative text-sm text-gray-800 whitespace-pre-wrap mb-4 leading-relaxed font-medium z-10">
           {comment.content}
         </p>
         
-        {/* 底部信息 */}
         <div className="flex items-center justify-between mt-auto relative z-10">
           <div className="flex items-center gap-2">
             <img
@@ -79,7 +90,7 @@ export default function StickyNoteCard({ comment }: { comment: Comment }) {
             >
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
             </svg>
-            {comment.likes || 0}
+            <span>{displayLikes}</span>
           </button>
         </div>
       </div>
